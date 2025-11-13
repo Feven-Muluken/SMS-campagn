@@ -1,5 +1,5 @@
-@import "tailwindcss";
-#root {
+ @import "tailwindcss";
+/*#root {
   max-width: 1280px;
   margin: 0 auto;
   padding: 2rem;
@@ -40,4 +40,77 @@
 
 .read-the-docs {
   color: #888;
+} */
+
+ /*.auth-container {
+  display: flex;
+  width: 90%;
+  max-width: 1000px;
+  height: 600px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  transition: all 0.8s ease-in-out;
 }
+
+.side {
+  width: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  transition: all 0.8s ease-in-out;
+}
+
+.left-side {
+  background-color: #0F1F4B;
+  color: white;
+  z-index: 2;
+  clip-path: polygon(0 0, 100% 0, 85% 100%, 0% 100%);
+}
+
+.right-side {
+  background-color: white;
+  z-index: 2;
+  clip-path: polygon(15% 0, 100% 0, 100% 100%, 0% 100%);
+}
+
+.slash-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: linear-gradient(135deg, #FDC500, #1120D4);
+  left: 50%;
+  transform: rotate(0deg);
+  transition: transform 0.8s ease-in-out, left 0.8s ease-in-out;
+  z-index: 3;
+}
+
+.login-mode .slash-line {
+  transform: rotate(0deg);
+  left: 50%;
+}
+
+.register-mode .slash-line {
+  transform: rotate(180deg);
+  left: 0%;
+}
+
+.register-mode .left-side {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.register-mode .right-side {
+  transform: translateX(-50%);
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #BABCFC;
+  border-radius: 6px;
+  outline: none;
+} 
