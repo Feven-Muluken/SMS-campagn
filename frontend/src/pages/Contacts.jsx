@@ -1,45 +1,59 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const Contacts = () => {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    axios.get('/contacts')
+  const fetchContacts = () => {
+    axios.get('/admin/contacts')
       .then(res => setContacts(res.data))
-      .catch(err => console.error('Failed to fetch contacts:', err))
+      .catch(() => toast.error('Failed to load contacts'))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(fetchContacts, []);
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this contact?')) return;
+    try {
+      await axios.delete(`/admin/contacts/${id}`);
+      toast.success('Contact deleted');
+      fetchContacts();
+    } catch {
+      toast.error('Failed to delete contact');
+    }
+  };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Contacts</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Contacts</h1>
+      <Link to="/add-contact" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 inline-block">
+        Add Contact
+      </Link>
+
       {loading ? (
-        <p>Loading contacts...</p>
+        <p className="text-gray-500">Loading contacts...</p>
       ) : contacts.length === 0 ? (
-        <p>No contacts found.</p>
+        <p className="text-gray-500">No contacts found.</p>
       ) : (
-        <div className="overflow-x-auto bg-white shadow rounded">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-100 text-left">
-              <tr>
-                <th className="p-3">Name</th>
-                <th className="p-3">Phone</th>
-                <th className="p-3">Group</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map(c => (
-                <tr key={c._id} className="border-t">
-                  <td className="p-3">{c.name}</td>
-                  <td className="p-3">{c.phone}</td>
-                  <td className="p-3">{c.group ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="space-y-4">
+          {contacts.map(c => (
+            <li key={c._id} className="bg-white p-4 rounded shadow flex justify-between items-center">
+              <div>
+                <p className="font-semibold">{c.name}</p>
+                <p className="text-sm text-gray-600">{c.phone}</p>
+                <p className="text-sm text-gray-500">Group: {c.group?.name || 'None'} | Consent: {c.optIn ? '✅' : '❌'}</p>
+              </div>
+              <div className="space-x-2">
+                <Link to={`/add-contact?id=${c._id}`} className="text-blue-600">Edit</Link>
+                <button onClick={() => handleDelete(c._id)} className="text-red-600">Delete</button>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
