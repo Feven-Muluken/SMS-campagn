@@ -24,7 +24,7 @@ const Dashboard = () => {
           <StatCard label="Users" value={stats.userCount} />
           <StatCard label="Contacts" value={stats.contactCount} />
           <StatCard label="Messages" value={stats.messageCount} />
-          <StatCard label="Groups" value={stats.totalGroups} />
+          <StatCard label="Groups" value={stats.gorupCount} />
         </div>
       ) : (
         <p className="text-red-500">Failed to load stats.</p>

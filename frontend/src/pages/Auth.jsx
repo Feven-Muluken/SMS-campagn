@@ -3,7 +3,8 @@ import axios from '../api/axiosInstance';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
-// text-sm
+import { jwtDecode } from 'jwt-decode';
+import { toast } from 'sonner';
 
 const Auth = () => {
   const location = useLocation();
@@ -15,34 +16,85 @@ const Auth = () => {
   useEffect(() => {
     setIsLogin(location.pathname === '/login');
   }, [location.pathname]);
-// const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '', role: '' });
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
   const navigate = useNavigate();
+  
+  // const handleLogin = async (e) => {
+  //   e.preventDefault();
+  //   setLoginError('');
+  //   try {
+  //     const res = await axios.post('/auth/login', {
+  //       email: loginForm.email,
+  //       password: loginForm.password
+  //     });
+  //     const token = res.data.token;
+  //     localStorage.setItem('token', token);
+  //     // const decoded = jwtDecode(token); 
+  //     // if (decoded.role === 'admin') {
+  //     //   navigate('/admin');
+  //     // } else if (decoded.role === 'staff') {
+  //     //   navigate('/staff');
+  //     // } else if (decoded.role === 'viewer') {
+  //     //   navigate('/viewer');
+  //     // } else {
+  //       navigate('/'); // fallback
+  //     // }
+  //     // toast.success('login successfull.');
 
+  //     // navigate('/');
+  //   } catch (err) {
+  //     setLoginError('Invalid credentials');
+  //   }
+  // };
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    try {
-      const res = await axios.post('/auth/login', {
-        email: loginForm.email,
-        password: loginForm.password
-      });
-      const token = res.data.token;
-      localStorage.setItem('token', token);
-      navigate('/');
-    } catch (err) {
-      setLoginError('Invalid credentials');
-    }
-  };
 
+  try {
+    const res = await axios.post('/auth/login', {
+      email: loginForm.email,
+      password: loginForm.password
+    });
+    
+    const token = res.data.token;
+    localStorage.setItem('token', token);
+
+    const decoded = jwtDecode(token);
+    console.log("user role",decoded.role)
+    if(decoded.role = 'admin'){
+      navigate('/');
+    }
+    // switch (decoded.role) {
+    //   case 'admin':
+    //     navigate('/admin');
+    //     break;
+    //   case 'staff':
+    //     navigate('/staff');
+    //     break;
+    //   case 'viewer':
+    //     navigate('/viewer');
+    //     break;
+    //   default:
+    //     navigate('/');
+    // }
+    else{
+      navigate('/home');
+    }
+    toast.success('Login successful');
+  } catch (err) {
+    const msg = err.response?.data?.message || 'Invalid credentials';
+    // setLoginError(msg);
+    toast.error(msg);
+  }
+};
   const handleRegister = async (e) => {
     e.preventDefault();
     setRegisterError('');
     try {
-      await axios.post('/auth/register', registerForm);
+      await axios.post('/auth/admin/register', registerForm);
       navigate('/login');
       setLoginForm({ email: registerForm.email, password: '' });
     } catch (err) {
@@ -51,7 +103,7 @@ const Auth = () => {
   };
 
   const switchToRegister = () => {
-    navigate('/register');
+    navigate('/admin/register');
     setRegisterError('');
   };
 
@@ -61,7 +113,9 @@ const Auth = () => {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden text'Inter', sans-serif;
+}
+">
       
       <motion.div
         key={isLogin ? 'welcome-right' : 'welcome-left'}

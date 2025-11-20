@@ -11,9 +11,9 @@ import ProtectedRoute from './components/ProtectesRoute';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
 import SendSMS from './pages/SendSMS';
-// import Contzzacts
-// import Groups
-// import Users
+import Contacts from './pages/Contacts';
+import Groups from './pages/Groups';
+import Users from './pages/Users';
 import CreateCampaign from './pages/CreateCampaign';
 import UserMessages from './pages/UserMessage';
 import DeliveryStatus from './pages/DeliveryStatus';
@@ -24,16 +24,16 @@ function App() {
       <Toaster position="top-right" richColors />
       <Router>
         <Routes>
-          <Route path='/register' element={<Auth />}/>
+          <Route path='/admin/register' element={<Auth />}/>
           <Route path='/login' element={<Auth />}/>
-          <Route path='/home' 
-            element={<ProtectedRoute>
-              <Home/>
-            </ProtectedRoute>}
+          <Route path='/home' element={<Home />}
+            // element={<ProtectedRoute >
+            //   <Home/> 
+            // </ProtectedRoute>}
           />
           <Route path="delivery-status" element={<DeliveryStatus />} />
           <Route path='/' 
-            element={<ProtectedRoute role="admin">
+            element={<ProtectedRoute re='admin'>
               <AdminLayout />
             </ProtectedRoute>
           }
@@ -41,14 +41,16 @@ function App() {
             <Route index element={<Dashboard />}/>
             <Route path='/campaign' element={<Campaigns />}/>
             <Route path="send-sms" element={<SendSMS />} />
-            {/*<Route path='/contacts' element={<Campaigns />}/>
-            <Route path='/groups' element={<Campaigns />}/>
-            <Route path='/users' element={<Campaigns />}/> */}
+            <Route path='/contacts' element={<Contacts />}/>
+            <Route path='/groups' element={<Groups />}/>
+            <Route path='/users' element={<Users />}/>
             <Route path='/CreateCampaign' element={<CreateCampaign />}/>
             <Route path='/campaign/new' element={<CreateCampaign />}/>
           </Route>
+          <Route path='huy' element={< Dashboard/>}/>
+          {/* <Route path='/users' element={<Users />}/> */}
           <Route path="/my-messages"
-            element={<ProtectedRoute>
+            element={<ProtectedRoute role='viewer'>
               <UserLayout>
                 <UserMessages />
               </UserLayout>

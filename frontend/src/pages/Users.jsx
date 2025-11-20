@@ -54,9 +54,9 @@ const Users = () => {
                   <p className="text-sm text-gray-500">Status: {u.active ? 'Active' : 'Deactivated'}</p>
                 </div>
                 <div className="space-x-2">
-                  {u.active && (
+                  {u.active ? 
                     <button onClick={() => handleDeactivate(u._id)} className="text-yellow-600">Deactivate</button>
-                  )}
+                  : <button onClick={() => handleDeactivate(u._id)} className="text-yellow-600">active</button>}
                   <button onClick={() => handleDelete(u._id)} className="text-red-600">Delete</button>
                 </div>
               </li>
