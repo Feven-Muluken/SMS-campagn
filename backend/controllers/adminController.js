@@ -3,7 +3,7 @@ const Campaign = require('../models/Campaign');
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const Contact = require('../models/Contact');
-
+const Group = require('../models/Group')
 
 const admin = async (req, res) => {
   res.send("Admin page");
@@ -55,16 +55,17 @@ const deleteUser =  async (req, res, next) => {
 
 // return total users, contacts, campagns, messages
 const getDashboardStats = async (req, res) => {
-  const [userCount, contactCount, campagnCount, messageCount] = await Promise.all([
+  const [userCount, contactCount, campagnCount, messageCount, gorupCount] = await Promise.all([
     User.countDocuments(),
     Contact.countDocuments(),
     Message.countDocuments(),
-    Campaign.countDocuments()
+    Campaign.countDocuments(),
+    Group.countDocuments()
   ]);
-  res.json({ userCount, contactCount, campagnCount, messageCount });
+  res.json({ userCount, contactCount, campagnCount, messageCount, gorupCount });
 };
 
-// return last 10 campagns
+
 const getRecentActivity = async (req, res) => { 
   try{
     const recentCampagns = await Campaign.find()
