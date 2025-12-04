@@ -7,8 +7,8 @@ import Home from './pages/Home';
 import AdminLayout from './layouts/AdminLayout';
 import UserLayout from './layouts/UserLayout';
 import ProtectedRoute from './components/ProtectesRoute';
-
-import Dashboard from './pages/Dashboard';
+import UserHome from './pages/userhome';
+import Dashboard from './pages/AdminDashboard';
 import Campaigns from './pages/Campaigns';
 import SendSMS from './pages/SendSMS';
 import Contacts from './pages/Contacts';
@@ -26,14 +26,21 @@ function App() {
         <Routes>
           <Route path='/admin/register' element={<Auth />}/>
           <Route path='/login' element={<Auth />}/>
-          <Route path='/home' element={<Home />}
-            // element={<ProtectedRoute >
-            //   <Home/> 
-            // </ProtectedRoute>}
+          <Route path='/home' 
+            element={<ProtectedRoute>
+              <Home/> 
+            </ProtectedRoute>}
           />
+          {/* <Route path='/viewerhome' 
+            element={<ProtectedRoute role="viewer">
+              <Home/> 
+            </ProtectedRoute>}
+          /> */}
+          <Route path='/UserHome' element={<UserHome />}/>
+          <Route path='/userhome' element={<UserLayout />}/>
           <Route path="delivery-status" element={<DeliveryStatus />} />
           <Route path='/' 
-            element={<ProtectedRoute re='admin'>
+            element={<ProtectedRoute role='admin'>
               <AdminLayout />
             </ProtectedRoute>
           }

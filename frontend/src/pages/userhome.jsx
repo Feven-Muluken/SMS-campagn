@@ -2,23 +2,14 @@ import { useUser } from '../context/UserContext';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  FiBarChart2, 
-  FiSend, 
-  FiUsers, 
-  FiUser,
+  FiUser, 
   FiMessageCircle,
-  FiSettings,
-  FiDollarSign,
   FiArrowRight
 } from 'react-icons/fi';
 
 const Home = () => {
   const { user } = useUser();
 
-  const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
@@ -35,8 +26,8 @@ const Home = () => {
                 <FiUser className="w-5 h-5" style={{ color: '#DF0A0A' }} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate capitalize">{user?.name || 'Administrator'}</p>
-                <p className="text-xs text-gray-600 capitalize">{user?.role || 'admin'}</p>
+                <p className="font-semibold text-gray-900 truncate capitalize">{user?.name || 'User'}</p>
+                <p className="text-xs text-gray-600 capitalize">{user?.role || 'viewer'}</p>
               </div>
             </div>
           </div>
@@ -59,7 +50,7 @@ const Home = () => {
           </p>
         </motion.div>
 
-        {/* {user?.role === 'admin' ? ( */}
+        {/* {user?.role === 'admin' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <motion.div
               variants={cardVariants}
@@ -187,25 +178,25 @@ const Home = () => {
               </Link>
             </motion.div>
           </div>
-          {/* ) : ( 
-           <motion.div
+        ) : ( */}
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center"
-          </div>> 
-             <div className="max-w-md mx-auto">
+          >
+            <div className="max-w-md mx-auto">
               <div className="p-4 rounded-full bg-red-50 inline-block mb-4">
                 <FiMessageCircle className="w-12 h-12" style={{ color: '#DF0A0A' }} />
               </div>
               <h3 className="text-2xl font-semibold text-gray-900 mb-3">View Your Messages</h3>
               <p className="text-gray-600 mb-6">
-                Check your received SMS messages and campaign updates 
+                Check your received SMS messages and campaign updates
               </p>
-              <Link 
+              <Link
                 to="/my-messages"
                 className="inline-flex items-center gap-2 text-white py-3 px-6 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl"
-                style={{ 
+                style={{
                   backgroundColor: '#DF0A0A',
                   boxShadow: '0 4px 15px rgba(223, 10, 10, 0.3)'
                 }}
@@ -215,7 +206,7 @@ const Home = () => {
               </Link>
             </div>
           </motion.div>
-        )} */}
+        {/* )} */}
       </div>
     </div>
   );

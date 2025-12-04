@@ -3,7 +3,7 @@ import axios from '../api/axiosInstance';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
-import { jwtDecode } from 'jwt-decode';
+import  jwtDecode   from '../utils/jwtHelper';
 import { toast } from 'sonner';
 
 const Auth = () => {
@@ -22,36 +22,9 @@ const Auth = () => {
   const [registerError, setRegisterError] = useState('');
   const navigate = useNavigate();
   
-  // const handleLogin = async (e) => {
-  //   e.preventDefault();
-  //   setLoginError('');
-  //   try {
-  //     const res = await axios.post('/auth/login', {
-  //       email: loginForm.email,
-  //       password: loginForm.password
-  //     });
-  //     const token = res.data.token;
-  //     localStorage.setItem('token', token);
-  //     // const decoded = jwtDecode(token); 
-  //     // if (decoded.role === 'admin') {
-  //     //   navigate('/admin');
-  //     // } else if (decoded.role === 'staff') {
-  //     //   navigate('/staff');
-  //     // } else if (decoded.role === 'viewer') {
-  //     //   navigate('/viewer');
-  //     // } else {
-  //       navigate('/'); // fallback
-  //     // }
-  //     // toast.success('login successfull.');
-
-  //     // navigate('/');
-  //   } catch (err) {
-  //     setLoginError('Invalid credentials');
-  //   }
-  // };
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginError('');
+const handleLogin = async (e) => {
+  e.preventDefault();
+  setLoginError('');
 
   try {
     const res = await axios.post('/auth/login', {
@@ -60,30 +33,37 @@ const Auth = () => {
     });
     
     const token = res.data.token;
+    // store token and decode
     localStorage.setItem('token', token);
-
     const decoded = jwtDecode(token);
-    console.log("user role",decoded.role)
-    if(decoded.role = 'admin'){
-      navigate('/');
+    localStorage.getItem('token')            
+
+    
+    console.log(jwtDecode(localStorage.getItem('token'))) 
+    console.log('user role', decoded.role, token, decoded);
+    // update context so ProtectedRoute sees the user immediately
+    // if (typeof setUser === 'function') setUser(decoded);
+
+    if (decoded.role === 'admin') {
+      navigate('/home');
     }
     // switch (decoded.role) {
     //   case 'admin':
-    //     navigate('/admin');
+    //     navigate('/');
     //     break;
     //   case 'staff':
-    //     navigate('/staff');
+    //     navigate('/home');
     //     break;
     //   case 'viewer':
-    //     navigate('/viewer');
+    //     navigate('/home');
     //     break;
     //   default:
-    //     navigate('/');
+    //     navigate('/unauthorized');
     // }
     else{
-      navigate('/home');
+      navigate('/userhome');
     }
-    toast.success('Login successful');
+    toast.success('Login successfull');
   } catch (err) {
     const msg = err.response?.data?.message || 'Invalid credentials';
     // setLoginError(msg);
@@ -113,10 +93,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden text'Inter', sans-serif;
-}
-">
-      
+    <div className="relative flex h-screen overflow-hidden text'Inter', sans-serif;}">      
       <motion.div
         key={isLogin ? 'welcome-right' : 'welcome-left'}
         initial={false}
@@ -160,15 +137,17 @@ const Auth = () => {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-white max-w-md text-center"
           >
-            <motion.h1
+            <motion.div
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="text-5xl font-bold mb-6"
-              style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}
+              className="mb-6"
             >
-              {isLogin ? 'WELCOME BACK!' : 'WELCOME!'}
-            </motion.h1>
+              <h1 className="text-5xl font-bold mb-2" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>
+                {isLogin ? 'WELCOME BACK!' : 'WELCOME!'}
+              </h1>
+              <p className="text-2xl font-semibold" style={{ color: '#FEE2E2' }}>Afroel</p>
+            </motion.div>
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -216,7 +195,10 @@ const Auth = () => {
                 exit={{ opacity: 0, x: 30 }}
                 transition={{ duration: 0.5 }}
               >
-                <h2 className="text-4xl font-bold mb-8 text-[#1F2937]">Login</h2>
+                <div className="mb-8">
+                  <h2 className="text-4xl font-bold text-[#1F2937]">Login</h2>
+                  <p className="text-sm text-gray-500 mt-1">Afroel SMS Campaign Platform</p>
+                </div>
 
                 <form onSubmit={handleLogin} className="space-y-6">
                   {loginError && (
@@ -316,7 +298,10 @@ const Auth = () => {
                 exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.5 }}
               >
-                <h2 className="text-4xl font-bold mb-8 text-[#1F2937]">Register</h2>
+                <div className="mb-8">
+                  <h2 className="text-4xl font-bold text-[#1F2937]">Register</h2>
+                  <p className="text-sm text-gray-500 mt-1">afroel.com SMS Campaign Platform</p>
+                </div>
 
                 <form onSubmit={handleRegister} className="space-y-6">
                   {registerError && (
@@ -411,8 +396,8 @@ const Auth = () => {
                     >
                       <option value="">Select Role</option>
                       <option value="admin">Admin</option>
-                      <option value="user">User</option>
-                      <option value="user">Viewer</option>
+                        <option value="user">User</option>
+                        <option value="viewer">Viewer</option>
                     </select>
                   </div>
 
