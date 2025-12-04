@@ -23,11 +23,15 @@ const authRoutes = require('./routes/authRoutes');
 const smsRoutes = require('./routes/smsRoutes');
 const errorMiddleware = require('./middleware/errorMiddleware');
 const groupRoutes = require('./routes/groupRoutes');
+const campaignRoutes = require('./routes/campaignRoutes')
+const contactRoutes = require('./routes/contactRoutes');
 
 app.use('/admin', adminRoutes);
 app.use('/auth', authRoutes);
 app.use('/sms', smsRoutes);
 app.use('/groups', groupRoutes);
+app.use('/campaign', campaignRoutes)
+app.use('/contacts', contactRoutes);
 app.use(errorMiddleware);
 
 const PORT = process.env.PORT || 5000;

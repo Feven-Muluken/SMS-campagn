@@ -34,7 +34,7 @@ router.post('/admin/register', authMiddleware, checkRole(['admin']), register);
 
 router.post('/login', login);
 
-// router.get("/profile", verifyToken, (req, res) => {
+// router.get("/profile", verifyTokenyyy, (req, res) => {
 //   res.json({ message: "Profile data", user: req.user });
 // });
 
