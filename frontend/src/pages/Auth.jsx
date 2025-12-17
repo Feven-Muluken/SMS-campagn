@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import  jwtDecode   from '../utils/jwtHelper';
 import { toast } from 'sonner';
+import { useUser } from '../context/UserContext';
 
 const Auth = () => {
   const location = useLocation();
@@ -21,6 +22,7 @@ const Auth = () => {
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
   const navigate = useNavigate();
+  const { refreshUser } = useUser();
   
 const handleLogin = async (e) => {
   e.preventDefault();
@@ -35,6 +37,7 @@ const handleLogin = async (e) => {
     const token = res.data.token;
     // store token and decode
     localStorage.setItem('token', token);
+    refreshUser();
     const decoded = jwtDecode(token);
     localStorage.getItem('token')            
 
@@ -45,7 +48,7 @@ const handleLogin = async (e) => {
     // if (typeof setUser === 'function') setUser(decoded);
 
     if (decoded.role === 'admin') {
-      navigate('/home');
+      navigate('/admin');
     }
     // switch (decoded.role) {
     //   case 'admin':
@@ -61,9 +64,10 @@ const handleLogin = async (e) => {
     //     navigate('/unauthorized');
     // }
     else{
-      navigate('/userhome');
+      navigate('/home');
     }
     toast.success('Login successfull');
+    console.log(decoded.role);
   } catch (err) {
     const msg = err.response?.data?.message || 'Invalid credentials';
     // setLoginError(msg);

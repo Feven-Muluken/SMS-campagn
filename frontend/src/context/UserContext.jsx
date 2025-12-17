@@ -5,10 +5,15 @@ const UserContext = createContext();
 
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadUserFromToken = () => {
     const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) { 
+      setUser(null);
+      setLoading(false);
+      return;
+    }
 
     try {
       const decoded = jwtDecode(token);
@@ -23,9 +28,21 @@ export const UserProvider = ({ children }) => {
       localStorage.removeItem('token');
       setUser(null);
     }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadUserFromToken();
   }, []);
 
-  return <UserContext.Provider value={{ user, setUser }}>{children}</UserContext.Provider>;
+  const refreshUser = () => {
+    setLoading(true);
+    loadUserFromToken();
+  };
+
+  return <UserContext.Provider value={{ user, setUser, loading, refreshUser }}>
+    {children}
+  </UserContext.Provider>;
 };
 
 export const useUser = () => useContext(UserContext);

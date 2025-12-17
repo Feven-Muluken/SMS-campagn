@@ -14,12 +14,12 @@ import { useState } from 'react';
 const UserLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useUser();
+  const { user, setUser, refreshUser } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const menuItems = [
-    { id: 'home', label: 'Home', icon: FiHome, path: '/UserHome' },
-    { id: 'messages', label: 'My Messages', icon: FiMessageCircle, path: '/my-messages' },
+    { id: 'home', label: 'Home', icon: FiHome, path: '/home' },
+    { id: 'messages', label: 'My Messages', icon: FiMessageCircle, path: '/home/my-messages' },
   ];
 
   const handleNavigation = (path) => {
@@ -31,6 +31,7 @@ const UserLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    refreshUser();
     navigate('/login');
   };
 

@@ -18,7 +18,7 @@ const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, setUser } = useUser();
+  const { user, setUser, refreshUser } = useUser();
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, path: '/' },
@@ -38,7 +38,7 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    if (typeof setUser === 'function') setUser(null);
+    refreshUser();
     navigate('/login');
   };
 

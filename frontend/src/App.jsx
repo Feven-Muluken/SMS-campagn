@@ -24,21 +24,29 @@ function App() {
       <Toaster position="top-right" richColors />
       <Router>
         <Routes>
-          <Route path='/admin/register' element={<Auth />}/>
-          <Route path='/login' element={<Auth />}/>
-          <Route path='/home' 
-            element={<ProtectedRoute>
-              <Home/> 
+          <Route path='/admin/register' 
+            element={<ProtectedRoute role = 'admin'>
+              <Auth/> 
             </ProtectedRoute>}
           />
+          <Route path='/login' element={<Auth />}/>
+          {/* <Route path='/home/' 
+            element={<ProtectedRoute role='admin'>
+              <Home/> 
+            </ProtectedRoute>}
+          /> */}
           {/* <Route path='/viewerhome' 
             element={<ProtectedRoute role="viewer">
               <Home/> 
             </ProtectedRoute>}
           /> */}
-          <Route path='/UserHome' element={<UserHome />}/>
-          <Route path='/userhome' element={<UserLayout />}/>
-          <Route path="delivery-status" element={<DeliveryStatus />} />
+          {/* <Route path='/UserHome' element={<UserHome />}/> */}
+          
+          <Route path='/admin'
+            element={<ProtectedRoute role='admin'>
+              <Home/> 
+            </ProtectedRoute>}
+          />
           <Route path='/' 
             element={<ProtectedRoute role='admin'>
               <AdminLayout />
@@ -47,7 +55,7 @@ function App() {
           >
             <Route index element={<Dashboard />}/>
             <Route path='/campaign' element={<Campaigns />}/>
-            <Route path="send-sms" element={<SendSMS />} />
+            <Route path="/send-sms" element={<SendSMS />} />
             <Route path='/contacts' element={<Contacts />}/>
             <Route path='/groups' element={<Groups />}/>
             <Route path='/users' element={<Users />}/>
@@ -56,13 +64,17 @@ function App() {
           </Route>
           <Route path='huy' element={< Dashboard/>}/>
           {/* <Route path='/users' element={<Users />}/> */}
-          <Route path="/my-messages"
+          
+          <Route path="delivery-status" element={<DeliveryStatus />} />
+          <Route path="/home"
             element={<ProtectedRoute role='viewer'>
-              <UserLayout>
-                <UserMessages />
-              </UserLayout>
-            </ProtectedRoute>} 
-          />
+              <UserLayout />
+            </ProtectedRoute>
+            }
+          >
+            <Route index element={<UserHome />}/>
+            <Route path='/home/my-messages' element={< UserMessages />}/>
+          </Route>
           
         </Routes>
       </Router>

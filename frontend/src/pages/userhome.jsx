@@ -194,7 +194,7 @@ const Home = () => {
                 Check your received SMS messages and campaign updates
               </p>
               <Link
-                to="/my-messages"
+                to="/home/my-messages"
                 className="inline-flex items-center gap-2 text-white py-3 px-6 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl"
                 style={{
                   backgroundColor: '#DF0A0A',
