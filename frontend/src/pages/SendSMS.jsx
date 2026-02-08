@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { FiSend, FiUsers, FiMessageCircle, FiPhone, FiUser } from 'react-icons/fi';
 
@@ -10,13 +10,20 @@ const SendSMS = () => {
     sendType: 'campaign', // 'campaign', 'group', 'contact'
     campaignID: '',
     groupId: '',
-    contactIds: []
+    contactIds: [],
+    senderId: ''
   });
   const [campaigns, setCampaigns] = useState([]);
   const [groups, setGroups] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [charCount, setCharCount] = useState(0);
+
+  const toArray = (maybeArrayOrEnvelope) => {
+    if (Array.isArray(maybeArrayOrEnvelope)) return maybeArrayOrEnvelope;
+    if (Array.isArray(maybeArrayOrEnvelope?.data)) return maybeArrayOrEnvelope.data;
+    return [];
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -26,9 +33,9 @@ const SendSMS = () => {
           axios.get('/groups'),
           axios.get('/contacts')
         ]);
-        setCampaigns(campaignsRes.data || []);
-        setGroups(groupsRes.data || []);
-        setContacts(contactsRes.data || []);
+        setCampaigns(toArray(campaignsRes.data));
+        setGroups(toArray(groupsRes.data));
+        setContacts(toArray(contactsRes.data));
       } catch (error) {
         console.error('Error fetching data:', error);
         toast.error('Failed to load data');
@@ -44,8 +51,7 @@ const SendSMS = () => {
   const handleChange = (e) => {
     const { name, value, type } = e.target;
     if (type === 'checkbox') {
-      // Handle contact selection
-      const contactId = value;
+      const contactId = String(value);
       setForm(prev => ({
         ...prev,
         contactIds: prev.contactIds.includes(contactId)
@@ -70,7 +76,7 @@ const SendSMS = () => {
           setLoading(false);
           return;
         }
-        payload = { campaignID: form.campaignID };
+        payload = { campaignID: form.campaignID, senderId: form.senderId || undefined };
         response = await axios.post('/sms/send', payload);
       } else if (form.sendType === 'group') {
         if (!form.groupId) {
@@ -85,7 +91,8 @@ const SendSMS = () => {
         }
         payload = {
           groupId: form.groupId,
-          message: form.message
+          message: form.message,
+          senderId: form.senderId || undefined
         };
         response = await axios.post('/sms/send-group', payload);
       } else if (form.sendType === 'contact') {
@@ -101,7 +108,8 @@ const SendSMS = () => {
         }
         payload = {
           contactIds: form.contactIds,
-          message: form.message
+          message: form.message,
+          senderId: form.senderId || undefined
         };
         response = await axios.post('/sms/send-contacts', payload);
       }
@@ -120,7 +128,8 @@ const SendSMS = () => {
         sendType: 'campaign',
         campaignID: '',
         groupId: '',
-        contactIds: []
+        contactIds: [],
+        senderId: ''
       });
     } catch (error) {
       console.error('Error sending SMS:', error);
@@ -159,6 +168,27 @@ const SendSMS = () => {
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Send SMS</h2>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Premium Sender ID */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Premium Sender ID/ Campany Name
+              </label>
+              <input
+                name="senderId"
+                type="text"
+                placeholder="AbuMarket"
+                value={form.senderId}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
+                maxLength={11}
+                pattern="[A-Za-z0-9]{1,11}"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Must be approved in Afroel&apos;s Management. Use 1-11 letters/numbers.
+              </p>
+            </div>
+
             {/* Send Type Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -223,11 +253,11 @@ const SendSMS = () => {
                   {campaigns.length === 0 ? null : (
                     campaigns.map((campaign) => (
                       <option
-                        key={campaign._id}
-                        value={campaign._id}
+                        key={campaign.id}
+                        value={campaign.id}
                         disabled={campaign.status === 'sent'}
                       >
-                        {campaign.name} - {campaign.recipients?.length || 0} recipients
+                        {campaign.name} - {campaign.recipientLinks?.length || 0} recipients
                         {campaign.status === 'sent' ? ' (sent)' : ''}
                       </option>
                     ))
@@ -239,7 +269,7 @@ const SendSMS = () => {
                       <strong>Campaign Message:</strong>
                     </p>
                     <p className="text-sm text-gray-600">
-                      {campaigns.find((c) => c._id === form.campaignID)?.message || 'No message'}
+                      {campaigns.find((c) => String(c.id) === String(form.campaignID))?.message || 'No message'}
                     </p>
                   </div>
                 )}
@@ -266,8 +296,8 @@ const SendSMS = () => {
                 >
                   <option value="">Select a group</option>
                   {groups.map((group) => (
-                    <option key={group._id} value={group._id}>
-                      {group.name} ({group.memebers?.length || group.members?.length || 0} members)
+                    <option key={group.id} value={group.id}>
+                      {group.name} ({group.members?.length || 0} members)
                     </option>
                   ))}
         </select>
@@ -288,13 +318,13 @@ const SendSMS = () => {
                     <div className="space-y-2">
                       {contacts.map((contact) => (
                         <label
-                          key={contact._id}
+                          key={contact.id}
                           className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
                         >
                           <input
                             type="checkbox"
-                            value={contact._id}
-                            checked={form.contactIds.includes(contact._id)}
+                            value={contact.id}
+                            checked={form.contactIds.includes(String(contact.id))}
                             onChange={handleChange}
                             className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
                           />

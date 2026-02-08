@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { FiMessageCircle, FiClock, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import { toast } from 'sonner';
 
@@ -81,7 +81,7 @@ const UserMessages = () => {
           <div className="space-y-4">
             {messages.map((message, index) => (
               <motion.div
-                key={message._id}
+                key={message.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}

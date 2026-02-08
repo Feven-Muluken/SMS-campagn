@@ -1,10 +1,7 @@
-const Campaign = require('../models/Campaign')
-const User = require('../models/User')
-const Contact = require('../models/Contact');
-const Group = require('../models/Group');
-const { default: mongoose } = require('mongoose');
-const { isValidObjectId } = mongoose;
+const { Campaign, CampaignRecipient, CampaignDispatch, Group, Contact, User, sequelize } = require('../models');
+const { Op } = require('sequelize');
 
+const normalizeIds = (ids) => Array.isArray(ids) ? ids.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [];
 
 const createCampaign = async (req, res) => {
   try {
@@ -12,73 +9,91 @@ const createCampaign = async (req, res) => {
       name,
       message,
       type,
-      recipients,
+      recipients = [],
       group,
       schedule,
-      recurring,
+      recurring = {},
       recipientType
     } = req.body;
 
-    // basic required fields
     if (!name || !message || !type || !recipientType) {
-      return res.status(400).json({ message: 'Missing required fields: name, message, type, recipientType are required' });
+      return res.status(400).json({ message: 'Missing required fields: name, message, type, and recipientType are required' });
     }
 
-    // validate recipients array if provided
-    if (!Array.isArray(recipients)) {
-      return res.status(400).json({ message: 'recipients must be an array' });
-    }
-
-    const invalidId = recipients.filter(id => !isValidObjectId(id));
-    if (invalidId.length > 0) {
-      return res.status(400).json({ message: 'Invalid recipient ID(s)', invalidId });
-    }
-
-    // validate recipientType
     const allowedRecipientTypes = ['User', 'Contact'];
     if (!allowedRecipientTypes.includes(recipientType)) {
       return res.status(400).json({ message: `recipientType must be one of: ${allowedRecipientTypes.join(', ')}` });
     }
 
-    // if group provided, validate existence and ownership (or admin)
+    if (!Array.isArray(recipients)) {
+      return res.status(400).json({ message: 'recipients must be an array' });
+    }
+
+    const recipientIds = normalizeIds(recipients);
+
+    let groupRecord = null;
     if (group) {
-      if (!isValidObjectId(group)) return res.status(400).json({ message: 'Invalid group id' });
-      const groupDoc = await Group.findById(group);
-      if (!groupDoc) return res.status(404).json({ message: 'Group not found' });
-      if (req.user?.role !== 'admin' && String(groupDoc.owner) !== String(req.user?._id)) {
+      groupRecord = await Group.findByPk(group);
+      if (!groupRecord) return res.status(404).json({ message: 'Group not found' });
+      if (req.user?.role !== 'admin' && groupRecord.ownerId !== req.user?.id) {
         return res.status(403).json({ message: 'Group does not belong to you' });
       }
     }
 
-    // validate recipients exist in their corresponding collection
-    if (recipients.length > 0) {
+    if (recipientIds.length > 0) {
       if (recipientType === 'Contact') {
-        const found = await Contact.find({ _id: { $in: recipients } }).select('_id');
-        if (found.length !== recipients.length) return res.status(400).json({ message: 'One or more recipients not found (Contact)' });
-      } else if (recipientType === 'User') {
-        const foundUsers = await User.find({ _id: { $in: recipients } }).select('_id');
-        if (foundUsers.length !== recipients.length) return res.status(400).json({ message: 'One or more recipients not found (User)' });
+        const found = await Contact.findAll({ where: { id: recipientIds }, attributes: ['id'] });
+        if (found.length !== recipientIds.length) return res.status(400).json({ message: 'One or more recipients not found (Contact)' });
+      } else {
+        const foundUsers = await User.findAll({ where: { id: recipientIds }, attributes: ['id'] });
+        if (foundUsers.length !== recipientIds.length) return res.status(400).json({ message: 'One or more recipients not found (User)' });
       }
     }
 
-    const campaign = await Campaign.create({
-      name,
-      message,
-      type,
-      recipients,
-      group,
-      schedule,
-      recurring,
-      recipientType,
-      createdBy: req.user?._id
-    });
+    const tx = await sequelize.transaction();
+    try {
+      const campaign = await Campaign.create({
+        name,
+        message,
+        type,
+        recipientType,
+        groupId: groupRecord ? groupRecord.id : null,
+        schedule: schedule || null,
+        recurringActive: !!recurring?.active,
+        recurringInterval: recurring?.interval || null,
+        createdById: req.user?.id,
+        status: 'pending',
+      }, { transaction: tx });
 
-    res.status(201).json(campaign);
+      if (recipientIds.length > 0) {
+        await CampaignRecipient.bulkCreate(
+          recipientIds.map((id) => ({ campaignId: campaign.id, recipientType, recipientId: id })),
+          { transaction: tx }
+        );
+      }
+
+      await tx.commit();
+
+      const created = await Campaign.findByPk(campaign.id, {
+        include: [
+          { model: CampaignRecipient, as: 'recipientLinks', attributes: ['id', 'recipientId', 'recipientType'] },
+          { model: Group, as: 'group', attributes: ['id', 'name'] },
+          {
+            model: CampaignDispatch,
+            as: 'dispatches',
+            separate: true,
+            limit: 1,
+            order: [['scheduledFor', 'DESC']],
+          },
+        ],
+      });
+
+      res.status(201).json(created);
+    } catch (error) {
+      await tx.rollback();
+      throw error;
+    }
   } catch (error) {
-    if (error.name === 'ValidationError') {
-    return res.status(400).json({ message: error.message });
-  }
-
     console.error('Campaign creation error:', error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -86,15 +101,57 @@ const createCampaign = async (req, res) => {
 
 
 const getAllCampaigns = async (req, res) => {
-  try{
-    // Admins: return all campaigns. Regular users: return only campaigns they created.
-    let campaigns;
-    if (req.user?.role === 'admin') {
-      campaigns = await Campaign.find().select();
-    } else {
-      campaigns = await Campaign.find({ createdBy: req.user?._id }).select();
-    }
-    res.json(campaigns);
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 100);
+    const search = (req.query.search || '').trim();
+    const status = (req.query.status || '').trim();
+    const sortBy = ['name', 'status', 'created_at', 'createdAt', 'schedule'].includes(req.query.sortBy)
+      ? req.query.sortBy
+      : 'created_at';
+    const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
+    const ilike = Op.iLike || Op.like;
+
+    const ownerFilter = req.user?.role === 'admin' ? {} : { createdById: req.user?.id };
+    const where = {
+      ...ownerFilter,
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            [Op.or]: [
+              { name: { [ilike]: `%${search}%` } },
+              { message: { [ilike]: `%${search}%` } },
+              { status: { [ilike]: `%${search}%` } },
+            ],
+          }
+        : {}),
+    };
+
+    const { rows, count } = await Campaign.findAndCountAll({
+      where,
+      order: [[sortBy, sortDir]],
+      include: [
+        { model: CampaignRecipient, as: 'recipientLinks', attributes: ['id', 'recipientId', 'recipientType'] },
+        { model: Group, as: 'group', attributes: ['id', 'name'] },
+        {
+          model: CampaignDispatch,
+          as: 'dispatches',
+          separate: true,
+          limit: 1,
+          order: [['scheduledFor', 'DESC']],
+        },
+      ],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+    res.json({
+      data: rows,
+      page,
+      pageSize,
+      total: count,
+      totalPages: Math.ceil(count / pageSize),
+    });
   } catch (error) {
     console.error('Failed to fetch campaigns:', error);
     res.status(500).json({ message: 'Failed to fetch campaigns' });
@@ -102,45 +159,158 @@ const getAllCampaigns = async (req, res) => {
 };
 
 const updateCampaign = async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Invalid user ID format' });
-  }
-  try{
-    const campaign = await Campaign.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
+  const { id } = req.params;
+  try {
+    const campaign = await Campaign.findByPk(id, { include: [{ model: CampaignRecipient, as: 'recipientLinks' }] });
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
-    res.json(campaign);
+
+    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+      return res.status(403).json({ message: 'You do not have permission to update this campaign' });
+    }
+
+    const { name, message, type, recipients, group, schedule, recurring, recipientType, status } = req.body;
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (message) updates.message = message;
+    if (type) updates.type = type;
+    if (schedule !== undefined) updates.schedule = schedule || null;
+    if (status) updates.status = status;
+    if (recurring) {
+      updates.recurringActive = !!recurring?.active;
+      updates.recurringInterval = recurring?.interval || null;
+    }
+    if (recipientType) updates.recipientType = recipientType;
+
+    const tx = await sequelize.transaction();
+    try {
+      if (group !== undefined) {
+        if (group) {
+          const groupRecord = await Group.findByPk(group);
+          if (!groupRecord) {
+            await tx.rollback();
+            return res.status(404).json({ message: 'Group not found' });
+          }
+          updates.groupId = groupRecord.id;
+        } else {
+          updates.groupId = null;
+        }
+      }
+
+      await campaign.update(updates, { transaction: tx });
+
+      if (recipients !== undefined) {
+        if (!Array.isArray(recipients)) {
+          await tx.rollback();
+          return res.status(400).json({ message: 'recipients must be an array' });
+        }
+        const recipientIds = normalizeIds(recipients);
+        if (updates.recipientType || campaign.recipientType) {
+          const typeToUse = updates.recipientType || campaign.recipientType;
+          if (recipientIds.length > 0) {
+            const model = typeToUse === 'Contact' ? Contact : User;
+            const found = await model.findAll({ where: { id: recipientIds }, attributes: ['id'] });
+            if (found.length !== recipientIds.length) {
+              await tx.rollback();
+              return res.status(400).json({ message: 'One or more recipients not found for provided recipientType' });
+            }
+          }
+
+          await CampaignRecipient.destroy({ where: { campaignId: campaign.id }, transaction: tx });
+          if (recipientIds.length > 0) {
+            await CampaignRecipient.bulkCreate(
+              recipientIds.map((rid) => ({ campaignId: campaign.id, recipientId: rid, recipientType: typeToUse })),
+              { transaction: tx }
+            );
+          }
+        }
+      }
+
+      await tx.commit();
+
+      const updated = await Campaign.findByPk(campaign.id, {
+        include: [
+          { model: CampaignRecipient, as: 'recipientLinks', attributes: ['id', 'recipientId', 'recipientType'] },
+          { model: Group, as: 'group', attributes: ['id', 'name'] },
+          {
+            model: CampaignDispatch,
+            as: 'dispatches',
+            separate: true,
+            limit: 1,
+            order: [['scheduledFor', 'DESC']],
+          },
+        ],
+      });
+
+      res.json(updated);
+    } catch (error) {
+      await tx.rollback();
+      throw error;
+    }
   } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch campaigns' });
+    console.error('Failed to update campaign:', error);
+    res.status(500).json({ message: 'Failed to update campaign' });
   }
 };
 
 const deleteCampaign = async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Invalid user ID format' });
-  }
-  try{
-    const campaign = await Campaign.findByIdAndDelete(req.params.id);
+  const { id } = req.params;
+  try {
+    const campaign = await Campaign.findByPk(id);
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+
+    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+      return res.status(403).json({ message: 'You do not have permission to delete this campaign' });
+    }
+
+    await Campaign.destroy({ where: { id } });
     res.json({ message: 'Campaign deleted' });
   } catch (error) {
+    console.error('Failed to delete campaign:', error);
     res.status(500).json({ message: 'Failed to delete campaign' });
   }
 };
 
 const getCampaignById = async (req, res) => {
   const { id } = req.params;
-  if (!isValidObjectId(id)) return res.status(400).json({ message: 'Invalid campaign id' });
   try {
-    const campaign = await Campaign.findById(id)
-      .populate('recipients')
-      .populate('group')
-      .populate('createdBy', 'name email');
+    const campaign = await Campaign.findByPk(id, {
+      include: [
+        { model: CampaignRecipient, as: 'recipientLinks', attributes: ['id', 'recipientId', 'recipientType'] },
+        { model: Group, as: 'group', attributes: ['id', 'name'] },
+        { model: User, as: 'creator', attributes: ['id', 'name', 'email', 'role'] },
+        {
+          model: CampaignDispatch,
+          as: 'dispatches',
+          separate: true,
+          limit: 10,
+          order: [['scheduledFor', 'DESC']],
+        },
+      ],
+    });
+
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
-    // Only admins or the campaign creator can fetch a campaign
-    if (req.user?.role !== 'admin' && String(campaign.createdBy?._id || campaign.createdBy) !== String(req.user?._id)) {
+    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    res.json(campaign);
+    const links = campaign.recipientLinks || [];
+    const contactIds = links.filter((l) => l.recipientType === 'Contact').map((l) => l.recipientId);
+    const userIds = links.filter((l) => l.recipientType === 'User').map((l) => l.recipientId);
+
+    const [contacts, users] = await Promise.all([
+      contactIds.length ? Contact.findAll({ where: { id: contactIds } }) : [],
+      userIds.length ? User.findAll({ where: { id: userIds }, attributes: { exclude: ['password'] } }) : [],
+    ]);
+
+    const response = campaign.toJSON();
+    response.recipientsResolved = {
+      contacts,
+      users,
+    };
+
+    res.json(response);
   } catch (error) {
     console.error('Failed to fetch campaign by id:', error);
     res.status(500).json({ message: 'Failed to fetch campaign' });

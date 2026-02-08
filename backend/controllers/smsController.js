@@ -1,209 +1,149 @@
-const Campaign = require('../models/Campaign');
-const Message = require('../models/Message');
+const { Campaign, CampaignRecipient, Contact, User, Group, Message } = require('../models');
 const { sendSMS } = require('../services/smsService');
+const { Op } = require('sequelize');
 
+const normalizeSenderId = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : null;
+};
+
+// Common Premium Sender ID constraints: alphanumeric, up to 11 chars.
+// Note: Actual acceptance depends on Africa's Talking approval and country/operator rules.
+const isValidSenderId = (senderId) => /^[a-zA-Z0-9]{1,11}$/.test(senderId);
 
 const sendCampaignMessages = async (req, res) => {
-  const { campaignID } = req.body;
+  const { campaignID, senderId } = req.body;
   try {
-    console.log(`sendCampaignMessages called for campaignID=${campaignID} by user=${req.user?._id}`);
     if (!campaignID) {
       return res.status(400).json({ message: 'Campaign ID is required' });
     }
 
-    const campaign = await Campaign.findById(campaignID);
-    console.log('Loaded campaign:', campaign ? { id: campaign._id, name: campaign.name, recipientType: campaign.recipientType, recipientsCount: campaign.recipients?.length, group: campaign.group } : null);
+    const normalizedSenderId = normalizeSenderId(senderId);
+    if (normalizedSenderId && !isValidSenderId(normalizedSenderId)) {
+      return res.status(400).json({ message: 'Invalid senderId. Use 1-11 alphanumeric characters (e.g. AbuMarket).' });
+    }
+
+    const campaign = await Campaign.findByPk(campaignID, {
+      include: [{ model: CampaignRecipient, as: 'recipientLinks', attributes: ['recipientId', 'recipientType'] }]
+    });
     if (!campaign) {
       return res.status(404).json({ message: 'Campaign not found' });
     }
 
-    // Get recipients based on recipientType
+    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     let recipients = [];
-    if (campaign.recipients && campaign.recipients.length > 0) {
-      if (campaign.recipientType === 'Contact') {
-        const Contact = require('../models/Contact');
-        recipients = await Contact.find({ _id: { $in: campaign.recipients } });
-      } else if (campaign.recipientType === 'User') {
-        const User = require('../models/User');
-        recipients = await User.find({ _id: { $in: campaign.recipients } }).select('-password');
+    const links = campaign.recipientLinks || [];
+    const contactIds = links.filter((l) => l.recipientType === 'Contact').map((l) => l.recipientId);
+    const userIds = links.filter((l) => l.recipientType === 'User').map((l) => l.recipientId);
+
+    const [directContacts, directUsers] = await Promise.all([
+      contactIds.length ? Contact.findAll({ where: { id: contactIds } }) : [],
+      userIds.length ? User.findAll({ where: { id: userIds }, attributes: { exclude: ['password'] } }) : [],
+    ]);
+
+    recipients = [...directContacts, ...directUsers];
+
+    if (campaign.groupId) {
+      const group = await Group.findByPk(campaign.groupId, { include: [{ model: Contact, as: 'members' }] });
+      if (group && group.members?.length) {
+        recipients = [...recipients, ...group.members];
       }
     }
 
-    if (campaign.group) {
-      const Group = require('../models/Group');
-      const Contact = require('../models/Contact');
-      // populate canonical `members` field
-      const group = await Group.findById(campaign.group).populate('members');
-      if (group) {
-        // use canonical members array
-        const groupMembers = Array.isArray(group.members) ? group.members : [];
-
-        // If members were populated, convert to ids
-        const memberIds = groupMembers.map(m => (m && m._id) ? String(m._id) : String(m));
-        console.log('Group members resolved (ids):', memberIds);
-
-        if (memberIds.length > 0) {
-          const groupContacts = await Contact.find({ _id: { $in: memberIds } });
-          recipients = [...recipients, ...groupContacts];
-        } else {
-          // fallback: find contacts that reference this group in their `groups` field
-          const referencedContacts = await Contact.find({ groups: campaign.group });
-          if (referencedContacts && referencedContacts.length > 0) {
-            recipients = [...recipients, ...referencedContacts];
-          }
-        }
-      } else {
-        console.warn(`Campaign ${campaign._id} references a non-existing group ${campaign.group}`);
-      }
-    }
-
-    // remove duplicate recipients (by _id) and ensure phone numbers will be handled later
-    recipients = recipients.filter((v, i, a) => a.findIndex(x => String(x._id) === String(v._id)) === i);
+    // unique by id+type
+    const seen = new Set();
+    recipients = recipients.filter((r) => {
+      const key = `${r.constructor.name}-${r.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     if (recipients.length === 0) {
       return res.status(400).json({ message: 'No recipients found for this campaign' });
     }
 
-      const content = campaign.message;
+    const content = campaign.message;
     let successCount = 0;
     let failCount = 0;
 
     for (const recipient of recipients) {
-      // Get phone number based on recipient type
-      let phone = null;
-      if (campaign.recipientType === 'Contact') {
-        phone = recipient.phoneNumber;
-      } else if (campaign.recipientType === 'User') {
-        // Users might not have phoneNumber, skip if not available
-        phone = recipient.phoneNumber || null;
-      } else {
-        // Fallback: try to get phoneNumber from any recipient
-        phone = recipient.phoneNumber || null;
-      }
+      let phone = recipient.phoneNumber || null;
+      const type = recipient.constructor.name === 'Contact' ? 'Contact' : 'User';
 
       if (!phone) {
-        console.warn(`Skipping recipient ${recipient._id}: no phone number`);
-        failCount++;
+        failCount += 1;
         continue;
       }
 
       try {
-        const response = await sendSMS(phone, content);
-
+        const response = await sendSMS(phone, content, { senderId: normalizedSenderId });
         await Message.create({
-          campaign: campaign._id,
-          recipients: [recipient._id],
-          recipientType: campaign.recipientType,
+          campaignId: campaign.id,
+          recipientType: type,
+          recipientId: recipient.id,
           phoneNumber: phone,
           content,
           status: 'sent',
           response,
-          sentAt: new Date()
+          sentAt: new Date(),
         });
-        successCount++;
+        successCount += 1;
       } catch (error) {
-        console.error(`Failed to send SMS to ${phone}:`, error);
-        const errorMessage = error.message || error.toString() || 'Unknown error';
         await Message.create({
-          campaign: campaign._id,
-          recipients: [recipient._id],
-          recipientType: campaign.recipientType,
+          campaignId: campaign.id,
+          recipientType: type,
+          recipientId: recipient.id,
           phoneNumber: phone,
           content,
           status: 'failed',
-          response: { error: errorMessage },
+          response: { error: error.message || 'Unknown error' },
         });
-        failCount++;
+        failCount += 1;
       }
     }
 
-    campaign.status = 'sent';
-    await campaign.save();
+    await campaign.update({ status: 'sent' });
 
     res.json({
       message: 'Campaign messages dispatched',
       successCount,
       failCount,
-      total: recipients.length
+      total: recipients.length,
     });
   } catch (error) {
     console.error('SMS dispatch error:', error, { campaignID });
-    // log stack to server console for easier debugging
-    console.error(error.stack);
     const errorMessage = error.message || error.toString() || 'Server error';
-    // Include stack in response when NODE_ENV is not production to aid debugging
     const resp = { message: 'Failed to dispatch campaign messages', error: errorMessage };
     if (process.env.NODE_ENV !== 'production') resp.stack = error.stack;
     res.status(500).json(resp);
   }
-}
-//   try {
-//     const campaign = await campaign
-//     const { recipient, content, campaign } = req.body;
-//     if (!recipient || !content) {
-//       return res.status(400).json({ Message: 'Recipient and content are required' });
-//     }
-//     const messageLog = await sendSMS({
-//       senderID: req.user._id,
-//       recipient,
-//       content,
-//       campaign,
-//     });
-
-//     res.status(200).json({
-//       message: 'SMS sent successfully',
-//       data: messageLog,
-//     });
-//   } catch (error) {
-//     console.error(' SMS Error ', error );
-//     res.status(500).json({ message: error.message });
-//   }
-// };
-
-// const stats = async (req, res, next) => {
-//   try{
-//     const { name } = req.params;
-//     const stats = await Message.aggregate([
-
-//       { $match: { campaign: name } },
-//       { $group: { _id: '$status', count: { $sum: 1 } } },
-
-//     ]);
-
-//     res.json({ campaign: name, stats });
-//   } catch (error){
-//     console.error('Analytics error: ', error);
-//     res.status(500).json({ message: 'Server error'});
-//     next(error);
-//   }
-  
-// };
-
+};
 
 const sendGroupSMS = async (req, res) => {
-  const { groupId, message } = req.body;
+  const { groupId, message, senderId } = req.body;
   try {
     if (!groupId || !message) {
       return res.status(400).json({ message: 'Group ID and message are required' });
     }
 
-    const Group = require('../models/Group');
-    const group = await Group.findById(groupId).populate('members').populate('members');
+    const normalizedSenderId = normalizeSenderId(senderId);
+    if (normalizedSenderId && !isValidSenderId(normalizedSenderId)) {
+      return res.status(400).json({ message: 'Invalid senderId. Use 1-11 alphanumeric characters (e.g. AbuMarket).' });
+    }
 
+    const group = await Group.findByPk(groupId, { include: [{ model: Contact, as: 'members' }] });
     if (!group) {
       return res.status(404).json({ message: 'Group not found' });
     }
 
-    const groupMembers = group.members || group.members || [];
-    if (groupMembers.length === 0) {
-      return res.status(400).json({ message: 'Group has no members' });
-    }
-
-    const Contact = require('../models/Contact');
-    const contacts = await Contact.find({ _id: { $in: groupMembers } });
-
+    const contacts = group.members || [];
     if (contacts.length === 0) {
-      return res.status(400).json({ message: 'No valid contacts found in group' });
+      return res.status(400).json({ message: 'Group has no members' });
     }
 
     let successCount = 0;
@@ -211,17 +151,16 @@ const sendGroupSMS = async (req, res) => {
 
     for (const contact of contacts) {
       if (!contact.phoneNumber) {
-        console.warn(`Skipping contact ${contact._id}: no phone number`);
         failCount++;
         continue;
       }
 
       try {
-        const response = await sendSMS(contact.phoneNumber, message);
+        const response = await sendSMS(contact.phoneNumber, message, { senderId: normalizedSenderId });
 
         await Message.create({
-          recipients: [contact._id],
           recipientType: 'Contact',
+          recipientId: contact.id,
           phoneNumber: contact.phoneNumber,
           content: message,
           status: 'sent',
@@ -230,10 +169,9 @@ const sendGroupSMS = async (req, res) => {
         });
         successCount++;
       } catch (error) {
-        console.error(`Failed to send SMS to ${contact.phoneNumber}:`, error);
         await Message.create({
-          recipients: [contact._id],
           recipientType: 'Contact',
+          recipientId: contact.id,
           phoneNumber: contact.phoneNumber,
           content: message,
           status: 'failed',
@@ -261,7 +199,7 @@ const sendGroupSMS = async (req, res) => {
 };
 
 const sendContactsSMS = async (req, res) => {
-  const { contactIds, message } = req.body;
+  const { contactIds, message, senderId } = req.body;
   try {
     if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
       return res.status(400).json({ message: 'Contact IDs array is required' });
@@ -271,8 +209,12 @@ const sendContactsSMS = async (req, res) => {
       return res.status(400).json({ message: 'Message is required' });
     }
 
-    const Contact = require('../models/Contact');
-    const contacts = await Contact.find({ _id: { $in: contactIds } });
+    const normalizedSenderId = normalizeSenderId(senderId);
+    if (normalizedSenderId && !isValidSenderId(normalizedSenderId)) {
+      return res.status(400).json({ message: 'Invalid senderId. Use 1-11 alphanumeric characters (e.g. AbuMarket).' });
+    }
+
+    const contacts = await Contact.findAll({ where: { id: contactIds } });
 
     if (contacts.length === 0) {
       return res.status(400).json({ message: 'No valid contacts found' });
@@ -287,17 +229,16 @@ const sendContactsSMS = async (req, res) => {
 
     for (const contact of contacts) {
       if (!contact.phoneNumber) {
-        console.warn(`Skipping contact ${contact._id}: no phone number`);
         failCount++;
         continue;
       }
 
       try {
-        const response = await sendSMS(contact.phoneNumber, message);
+        const response = await sendSMS(contact.phoneNumber, message, { senderId: normalizedSenderId });
 
         await Message.create({
-          recipients: [contact._id],
           recipientType: 'Contact',
+          recipientId: contact.id,
           phoneNumber: contact.phoneNumber,
           content: message,
           status: 'sent',
@@ -306,11 +247,10 @@ const sendContactsSMS = async (req, res) => {
         });
         successCount++;
       } catch (error) {
-        console.error(`Failed to send SMS to ${contact.phoneNumber}:`, error);
         const errorMessage = error.message || error.toString() || 'Unknown error';
         await Message.create({
-          recipients: [contact._id],
           recipientType: 'Contact',
+          recipientId: contact.id,
           phoneNumber: contact.phoneNumber,
           content: message,
           status: 'failed',
@@ -336,5 +276,59 @@ const sendContactsSMS = async (req, res) => {
     });
   }
 };
+const getDeliveryStatus = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 100);
+    const search = (req.query.search || '').trim();
+    const status = (req.query.status || '').trim();
+    const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+    const sortBy = ['sent_at', 'sentAt', 'created_at', 'createdAt', 'status'].includes(req.query.sortBy)
+      ? req.query.sortBy
+      : 'created_at';
+    const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
+    const ilike = Op.iLike || Op.like;
 
-module.exports = { sendCampaignMessages, sendGroupSMS, sendContactsSMS };
+    const where = {
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            [Op.or]: [
+              { phoneNumber: { [ilike]: `%${search}%` } },
+              { content: { [ilike]: `%${search}%` } },
+            ],
+          }
+        : {}),
+      ...((startDate || endDate)
+        ? {
+            [Op.and]: [
+              startDate ? { createdAt: { [Op.gte]: startDate } } : {},
+              endDate ? { createdAt: { [Op.lte]: endDate } } : {},
+            ],
+          }
+        : {}),
+    };
+
+    const { rows, count } = await Message.findAndCountAll({
+      where,
+      include: [{ model: Campaign, as: 'campaign', attributes: ['id', 'name'] }],
+      order: [[sortBy, sortDir]],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+    res.json({
+      data: rows,
+      page,
+      pageSize,
+      total: count,
+      totalPages: Math.ceil(count / pageSize),
+    });
+  } catch (error) {
+    console.error('Failed to fetch delivery status', error);
+    res.status(500).json({ message: 'Failed to fetch delivery status' });
+  }
+};
+
+module.exports = { sendCampaignMessages, sendGroupSMS, sendContactsSMS, getDeliveryStatus };

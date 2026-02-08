@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { FiUsers, FiPlus, FiTrash2, FiX, FiUser, FiEdit2, FiCheck } from 'react-icons/fi';
 import DetailPanel from '../components/DetailPanel';
@@ -14,11 +14,18 @@ const Groups = () => {
   const [showForm, setShowForm] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const toArray = (maybeArrayOrEnvelope) => {
+    if (Array.isArray(maybeArrayOrEnvelope)) return maybeArrayOrEnvelope;
+    if (Array.isArray(maybeArrayOrEnvelope?.data)) return maybeArrayOrEnvelope.data;
+    return [];
+  };
 
   const fetchGroups = async () => {
     try {
       const res = await axios.get('/groups');
-      setGroups(res.data || []);
+      setGroups(toArray(res.data));
     } catch (err) {
       console.error('Error fetching groups:', err);
       toast.error('Failed to load groups');
@@ -28,7 +35,7 @@ const Groups = () => {
   const fetchContacts = async () => {
     try {
       const res = await axios.get('/contacts');
-      setContacts(res.data || []);
+      setContacts(toArray(res.data));
     } catch (err) {
       console.error('Error fetching contacts:', err);
       toast.error('Failed to load contacts');
@@ -55,7 +62,7 @@ const Groups = () => {
 
       if (selectedGroup) {
         // Update existing group
-        await axios.put(`/groups/${selectedGroup._id}`, payload);
+        await axios.put(`/groups/${selectedGroup.id}`, payload);
         toast.success('Group updated successfully');
       } else {
         // Create new group
@@ -94,7 +101,7 @@ const Groups = () => {
     setName(group.name || '');
     // Get existing members
     const existingMembers = group.members || [];
-    setSelectedMembers(existingMembers.map(m => m._id || m));
+    setSelectedMembers(existingMembers.map(m => m.id || m));
     setShowForm(true);
   };
 
@@ -104,6 +111,17 @@ const Groups = () => {
     setSelectedMembers([]);
     setShowForm(false);
   };
+
+  const searchTerm = search.trim().toLowerCase();
+  const filteredGroups = searchTerm
+    ? groups.filter(group => {
+        const ownerName = group.owner?.name || '';
+        const memberCount = String(group.members?.length || 0);
+        return [group.name, ownerName, memberCount]
+          .filter(Boolean)
+          .some(value => value.toLowerCase().includes(searchTerm));
+      })
+    : groups;
 
   const toggleMember = (contactId) => {
     setSelectedMembers(prev =>
@@ -118,11 +136,25 @@ const Groups = () => {
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200 mb-8">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Groups</h1>
               {/* <p className="text-sm text-gray-500 mt-1">Afroel SMS Campaign Platform</p> */}
             </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+              <div className="relative flex-1 min-w-[200px]">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search groups by name or owner"
+                  className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                />
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
             <button
               onClick={() => {
                 cancelEdit();
@@ -137,6 +169,7 @@ const Groups = () => {
               <FiPlus className="w-5 h-5" />
               {showForm ? 'Cancel' : 'Create Group'}
             </button>
+            </div>
           </div>
         </div>
       </div>
@@ -198,13 +231,13 @@ const Groups = () => {
                           <div className="space-y-2">
                             {contacts.map((contact) => (
                               <label
-                                key={contact._id}
+                                key={contact.id}
                                 className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
                               >
                                 <input
                                   type="checkbox"
-                                  checked={selectedMembers.includes(contact._id)}
-                                  onChange={() => toggleMember(contact._id)}
+                                  checked={selectedMembers.includes(contact.id)}
+                                  onChange={() => toggleMember(contact.id)}
                                   className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
                                 />
                                 <div className="flex-1 min-w-0">
@@ -251,11 +284,19 @@ const Groups = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  All Groups ({groups.length})
+                  All Groups ({filteredGroups.length})
                 </h2>
+                <p className="text-sm text-gray-500">Showing {filteredGroups.length} of {groups.length} groups</p>
               </div>
 
-              {groups.length === 0 ? (
+              {filteredGroups.length === 0 ? (
+                searchTerm && groups.length > 0 ? (
+                  <div className="p-12 text-center">
+                    <FiUsers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No groups match your search</h3>
+                    <p className="text-gray-500 mb-4">Try a different group name or owner.</p>
+                  </div>
+                ) : (
                 <div className="p-12 text-center">
                   <FiUsers className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No groups yet</h3>
@@ -268,11 +309,12 @@ const Groups = () => {
                     Create Group
                   </button>
                 </div>
+                )
               ) : (
                 <div className="divide-y divide-gray-200">
                   {groups.map((group) => (
                     <motion.div
-                      key={group._id}
+                      key={group.id}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="p-6 hover:bg-gray-50 transition-colors duration-200 cursor-pointer"
@@ -315,7 +357,7 @@ const Groups = () => {
                             <FiEdit2 className="w-5 h-5" />
                           </button>
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleDelete(group._id); }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(group.id); }}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
                             title="Delete group"
                           >
@@ -341,12 +383,12 @@ const Groups = () => {
               <strong>Member list:</strong>
               <ul className="list-disc ml-6 mt-2">
                 {(selectedDetail.members || []).slice(0, 20).map(m => (
-                  <li key={m._id || m}>{m.name || m}</li>
+                  <li key={m.id || m}>{m.name || m}</li>
                 ))}
               </ul>
             </div>
             <div><strong>Created:</strong> {selectedDetail.createdAt ? new Date(selectedDetail.createdAt).toLocaleString() : '—'}</div>
-            <div><strong>Raw ID:</strong> <code>{selectedDetail._id}</code></div>
+            <div><strong>Raw ID:</strong> <code>{selectedDetail.id}</code></div>
           </div>
         )}
       </DetailPanel>

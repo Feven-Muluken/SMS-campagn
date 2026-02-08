@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { FiBarChart2, FiUsers, FiMessageCircle, FiSend, FiUser } from 'react-icons/fi';
 import { toast } from 'sonner';
 
@@ -40,7 +40,7 @@ const AdminDashboard = () => {
           <p className="text-3xl font-bold" style={{ color }}>{value || 0}</p>
         </div>
         <div className="p-3 rounded-lg" style={{ backgroundColor: '#FEE2E2' }}>
-          <Icon className="w-6 h-6" style={{ color }} />
+          {Icon({ className: 'w-6 h-6', style: { color } })}
         </div>
       </div>
     </motion.div>
@@ -122,7 +122,7 @@ const AdminDashboard = () => {
               <div className="space-y-4">
                 {recentActivity.recentCampaigns.slice(0, 5).map((campaign) => (
                   <div
-                    key={campaign._id}
+                    key={campaign.id}
                     className="border-b border-gray-100 pb-4 last:border-0 last:pb-0"
                   >
                     <div className="flex items-start justify-between">
@@ -130,7 +130,7 @@ const AdminDashboard = () => {
                         <h3 className="font-semibold text-gray-900 mb-1">{campaign.name}</h3>
                         <p className="text-sm text-gray-600 line-clamp-2 mb-2">{campaign.message}</p>
                         <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>By: {campaign.createdBy?.name || 'Unknown'}</span>
+                          <span>By: {campaign.creator?.name || 'Unknown'}</span>
                           <span>•</span>
                           <span>{new Date(campaign.createdAt).toLocaleDateString()}</span>
                         </div>
@@ -171,7 +171,7 @@ const AdminDashboard = () => {
               <div className="space-y-4">
                 {recentActivity.recentMessages.slice(0, 5).map((message) => (
                   <div
-                    key={message._id}
+                    key={message.id}
                     className="border-b border-gray-100 pb-4 last:border-0 last:pb-0"
                   >
                     <div className="flex items-start justify-between">

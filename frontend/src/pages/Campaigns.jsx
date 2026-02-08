@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from '../api/axiosInstance';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { FiSend, FiEdit2, FiTrash2, FiCalendar, FiUsers, FiMessageCircle, FiRefreshCw } from 'react-icons/fi';
 import DetailPanel from '../components/DetailPanel';
@@ -10,6 +10,7 @@ const Campaigns = () => {
   const [groups, setGroups] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState({ 
     name: '', 
     message: '', 
@@ -23,19 +24,25 @@ const Campaigns = () => {
   });
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [selectedForSendId, setSelectedForSendId] = useState('');
-  const [selectedForSendDetails, setSelectedForSendDetails] = useState(null);
   const [sending, setSending] = useState(false);
+  const [senderId, setSenderId] = useState('');
   const [charCount, setCharCount] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [selectedDetail, setSelectedDetail] = useState(null);
 
+  const toArray = (maybeArrayOrEnvelope) => {
+    if (Array.isArray(maybeArrayOrEnvelope)) return maybeArrayOrEnvelope;
+    if (Array.isArray(maybeArrayOrEnvelope?.data)) return maybeArrayOrEnvelope.data;
+    return [];
+  };
+
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
       const res = await axios.get('/campaign');
-      setCampaigns(res.data || []);
+      setCampaigns(toArray(res.data));
     } catch (error) {
       console.error('Error fetching campaigns:', error);
       toast.error('Failed to load campaigns');
@@ -48,7 +55,7 @@ const Campaigns = () => {
   const fetchGroups = async () => {
     try {
       const res = await axios.get('/groups');
-      setGroups(res.data || []);
+      setGroups(toArray(res.data));
     } catch (error) {
       console.error('Error fetching groups:', error);
       toast.error('Failed to load groups');
@@ -58,7 +65,7 @@ const Campaigns = () => {
   const fetchContacts = async () => {
     try {
       const res = await axios.get('/contacts');
-      setContacts(res.data || []);
+      setContacts(toArray(res.data));
     } catch (error) {
       console.error('Error fetching contacts:', error);
       toast.error('Failed to load contacts');
@@ -78,15 +85,37 @@ const Campaigns = () => {
     e.preventDefault();
     setLoading(true);
     try {
+      if (!selectedCampaign) {
+        if (form.sendNow && form.schedule) {
+          setForm((prev) => ({ ...prev, schedule: '' }));
+        }
+        if (!form.sendNow && !form.schedule) {
+          toast.error('Pick a schedule time (or choose Send now)');
+          setLoading(false);
+          return;
+        }
+        if (form.recurring?.active && !form.schedule) {
+          toast.error('Recurring requires a scheduled time');
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Editing: if user enables recurring, ensure schedule exists.
+        if (form.recurring?.active && !form.schedule) {
+          toast.error('Recurring requires a scheduled time');
+          setLoading(false);
+          return;
+        }
+      }
+
       // If this is an individual campaign and user provided a new phone but didn't add it to recipients,
       // create the contact first and add its id to recipients so backend receives valid contact ids.
       if (form.type === 'individual' && form.recipientType === 'Contact' && (!form.recipients || form.recipients.length === 0) && newContactPhone) {
         try {
           const resp = await axios.post('/contacts', { name: newContactName || newContactPhone, phoneNumber: newContactPhone });
           const created = resp.data;
-          // ensure contacts list and form.recipients updated
           setContacts(prev => [created, ...prev]);
-          setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created._id] }));
+          setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created.id] }));
         } catch (contactErr) {
           console.error('Failed to create contact before campaign:', contactErr);
           toast.error(contactErr.response?.data?.message || 'Failed to create contact');
@@ -101,14 +130,14 @@ const Campaigns = () => {
         recipientType: form.recipientType,
         recipients: form.recipients || [],
         group: form.groupId || null,
-        schedule: form.schedule ? new Date(form.schedule).toISOString() : null,
-        recurring: form.recurring.active ? form.recurring : undefined,
+        schedule: form.sendNow ? null : (form.schedule ? new Date(form.schedule).toISOString() : null),
+        recurring: (!form.sendNow && form.recurring?.active) ? form.recurring : undefined,
       };
 
       if (selectedCampaign) {
-        const res = await axios.put(`/campaign/${selectedCampaign._id}`, payload);
+        const res = await axios.put(`/campaign/${selectedCampaign.id}`, payload);
         toast.success('Campaign updated successfully');
-        if (res?.data) setCampaigns(prev => prev.map(c => c._id === res.data._id ? res.data : c));
+        if (res?.data) setCampaigns(prev => prev.map(c => c.id === res.data.id ? res.data : c));
         else fetchCampaigns();
         setSelectedCampaign(null);
       } else {
@@ -117,9 +146,9 @@ const Campaigns = () => {
         if (res?.data) setCampaigns(prev => [res.data, ...prev]);
         else fetchCampaigns();
 
-        if (form.sendNow && res?.data?._id) {
+        if (form.sendNow && res?.data?.id) {
           try {
-            await axios.post('/sms/send', { campaignID: res.data._id });
+            await axios.post('/sms/send', { campaignID: res.data.id });
             toast.success('Campaign dispatched');
           } catch (dispatchErr) {
             console.error('Dispatch error:', dispatchErr);
@@ -170,13 +199,29 @@ const Campaigns = () => {
       message: campaign.message || '',
       type: campaign.type || 'broadcast/everyone',
       recipientType: campaign.recipientType || 'Contact',
-      groupId: campaign.group?._id || '',
+      groupId: campaign.group?.id || '',
       schedule: campaign.schedule ? new Date(campaign.schedule).toISOString().slice(0, 16) : '',
-      recipients: campaign.recipients?.map(r => r._id || r) || [],
-      recurring: campaign.recurring || { active: false, interval: 'daily' },
+      recipients: campaign.recipientLinks?.map(r => r.recipientId) || campaign.recipients?.map(r => r.id || r) || [],
+      recurring: {
+        active: !!campaign.recurringActive,
+        interval: campaign.recurringInterval || 'daily',
+      },
       sendNow: false
     });
     setShowForm(true);
+  };
+
+  const getLastDispatch = (campaign) => {
+    const list = Array.isArray(campaign?.dispatches) ? campaign.dispatches : [];
+    return list.length ? list[0] : null;
+  };
+
+  const formatIntervalLabel = (interval) => {
+    if (!interval) return '';
+    if (interval === 'daily') return 'Daily';
+    if (interval === 'weekly') return 'Weekly';
+    if (interval === 'monthly') return 'Monthly';
+    return String(interval);
   };
 
   const cancelEdit = () => {
@@ -204,7 +249,7 @@ const Campaigns = () => {
       const resp = await axios.post('/contacts', { name: newContactName || newContactPhone, phoneNumber: newContactPhone });
       const created = resp.data;
       setContacts(prev => [created, ...prev]);
-      setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created._id] }));
+      setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created.id] }));
       setNewContactName('');
       setNewContactPhone('');
       toast.success('Contact added');
@@ -217,17 +262,40 @@ const Campaigns = () => {
   const getMessageParts = () => Math.ceil(charCount / 160) || 1;
   const getEstimatedCost = () => (getMessageParts() * 0.07).toFixed(2);
 
+  const searchTerm = search.trim().toLowerCase();
+  const filteredCampaigns = searchTerm
+    ? campaigns.filter(campaign => {
+        const groupName = campaign.group?.name || '';
+        return [campaign.name, campaign.message, campaign.status, campaign.type, groupName]
+          .filter(Boolean)
+          .some(value => value.toLowerCase().includes(searchTerm));
+      })
+    : campaigns;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200 mb-8">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
               {/* <p className="text-sm text-gray-500 mt-1">Afroel SMS Campaign Platform</p> */}
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+              <div className="relative flex-1 min-w-[220px]">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name, status, or message"
+                  className="w-full rounded-lg border border-gray-200 py-2.5 pl-10 pr-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                />
+                <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
               <button
                 onClick={fetchCampaigns}
                 disabled={loading}
@@ -365,7 +433,7 @@ const Campaigns = () => {
                         >
                           <option value="">Select a group</option>
                           {groups.map((group) => (
-                            <option key={group._id} value={group._id}>
+                            <option key={group.id} value={group.id}>
                               {group.name}
                             </option>
                           ))}
@@ -405,7 +473,7 @@ const Campaigns = () => {
                               className="flex-1 px-3 py-2 border rounded-md"
                             >
                               {contacts.map(c => (
-                                <option key={c._id} value={c._id}>{c.name || c.phoneNumber} — {c.phoneNumber}</option>
+                                <option key={c.id} value={c.id}>{c.name || c.phoneNumber} — {c.phoneNumber}</option>
                               ))}
                             </select>
                           </div>
@@ -416,31 +484,85 @@ const Campaigns = () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         <FiCalendar className="inline w-4 h-4 mr-1" />
-                        Schedule Delivery (Optional)
+                        Delivery Timing
                       </label>
-                      <input
-                        type="datetime-local"
-                        value={form.schedule}
-                        onChange={(e) => setForm({ ...form, schedule: e.target.value })}
-                        className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
-                        style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
-                        min={new Date().toISOString().slice(0, 16)}
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Leave empty to send immediately</p>
+
+                      {!selectedCampaign && (
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="radio"
+                              name="deliveryMode"
+                              checked={!!form.sendNow}
+                              onChange={() => setForm((prev) => ({
+                                ...prev,
+                                sendNow: true,
+                                schedule: '',
+                                recurring: { active: false, interval: 'daily' },
+                              }))}
+                            />
+                            Send now
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="radio"
+                              name="deliveryMode"
+                              checked={!form.sendNow}
+                              onChange={() => setForm((prev) => ({ ...prev, sendNow: false }))}
+                            />
+                            Schedule for later
+                          </label>
+                        </div>
+                      )}
+
+                      {(!form.sendNow || selectedCampaign) && (
+                        <div className="mt-3">
+                          <input
+                            type="datetime-local"
+                            value={form.schedule}
+                            onChange={(e) => setForm({ ...form, schedule: e.target.value })}
+                            className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                            style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
+                            min={new Date().toISOString().slice(0, 16)}
+                            required={!selectedCampaign && !form.sendNow}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Campaign scheduler will send automatically at this time.</p>
+                        </div>
+                      )}
                     </div>
 
-                    {!selectedCampaign && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id="sendNow"
-                          checked={form.sendNow}
-                          onChange={(e) => setForm({ ...form, sendNow: e.target.checked })}
-                          className="w-4 h-4"
-                        />
-                        <label htmlFor="sendNow" className="text-sm text-gray-700">
-                          Send immediately after creation
+                    {(!form.sendNow || selectedCampaign) && (
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={!!form.recurring?.active}
+                            onChange={(e) => setForm((prev) => ({
+                              ...prev,
+                              recurring: { ...prev.recurring, active: e.target.checked },
+                            }))}
+                            className="w-4 h-4"
+                          />
+                          Recurring schedule
                         </label>
+                        {form.recurring?.active && (
+                          <div className="flex items-center gap-3">
+                            <label className="text-sm text-gray-700">Repeat:</label>
+                            <select
+                              value={form.recurring?.interval || 'daily'}
+                              onChange={(e) => setForm((prev) => ({
+                                ...prev,
+                                recurring: { ...prev.recurring, interval: e.target.value },
+                              }))}
+                              className="px-3 py-2 border rounded-md"
+                            >
+                              <option value="daily">Daily</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="monthly">Monthly</option>
+                            </select>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-500">Recurring campaigns stay pending and re-schedule after each dispatch.</p>
                       </div>
                     )}
 
@@ -476,32 +598,31 @@ const Campaigns = () => {
           <div className="lg:col-span-2">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <h2 className="text-xl font-semibold text-gray-900">All Campaigns ({campaigns.length})</h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">All Campaigns ({filteredCampaigns.length})</h2>
+                  <p className="text-sm text-gray-500">Showing {filteredCampaigns.length} of {campaigns.length} campaigns</p>
+                </div>
 
                 <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={senderId}
+                    onChange={(e) => setSenderId(e.target.value)}
+                    placeholder="Sender ID (e.g. AbuMarket)"
+                    className="px-3 py-2 border rounded-md"
+                    maxLength={11}
+                  />
                   <select
                     value={selectedForSendId}
                     onChange={async (e) => {
                       const id = e.target.value;
                       setSelectedForSendId(id);
-                      if (!id) {
-                        setSelectedForSendDetails(null);
-                        return;
-                      }
-                      try {
-                        const res = await axios.get(`/campaign/${id}`);
-                        setSelectedForSendDetails(res.data);
-                      } catch (err) {
-                        console.error('Failed to fetch campaign details', err);
-                        toast.error('Failed to fetch campaign details');
-                        setSelectedForSendDetails(null);
-                      }
                     }}
                     className="px-3 py-2 border rounded-md"
                   >
                     <option value="">Select campaign to send</option>
                     {campaigns.map(c => (
-                      <option key={c._id} value={c._id}>{c.name}</option>
+                      <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
 
@@ -511,7 +632,7 @@ const Campaigns = () => {
                       if (!window.confirm('Send this campaign now?')) return;
                       setSending(true);
                       try {
-                        await axios.post('/sms/send', { campaignID: selectedForSendId });
+                        await axios.post('/sms/send', { campaignID: selectedForSendId, senderId: senderId || undefined });
                         toast.success('Campaign dispatched');
                         // Optionally refresh campaigns/messages
                         fetchCampaigns();
@@ -535,7 +656,14 @@ const Campaigns = () => {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-4"></div>
                   <p className="text-gray-500">Loading campaigns...</p>
                 </div>
-              ) : campaigns.length === 0 ? (
+              ) : filteredCampaigns.length === 0 ? (
+                searchTerm && campaigns.length > 0 ? (
+                  <div className="p-12 text-center">
+                    <FiSend className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No campaigns match your search</h3>
+                    <p className="text-gray-500 mb-4">Try a different keyword or status.</p>
+                  </div>
+                ) : (
                 <div className="p-12 text-center">
                   <FiSend className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No campaigns yet</h3>
@@ -548,11 +676,12 @@ const Campaigns = () => {
                     Create Campaign
                   </button>
                 </div>
+                )
               ) : (
                 <div className="divide-y divide-gray-200">
-                  {campaigns.map((campaign) => (
+                  {filteredCampaigns.map((campaign) => (
                     <motion.div
-                      key={campaign._id}
+                      key={campaign.id}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="p-6 hover:bg-gray-50 transition-colors duration-200 cursor-pointer"
@@ -573,6 +702,61 @@ const Campaigns = () => {
                             >
                               {campaign.status || 'draft'}
                             </span>
+
+                            {campaign.schedule && (
+                              <span
+                                className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700"
+                                title={new Date(campaign.schedule).toLocaleString()}
+                              >
+                                Scheduled
+                              </span>
+                            )}
+
+                            {campaign.recurringActive && (
+                              <span
+                                className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700"
+                                title={`Recurring: ${formatIntervalLabel(campaign.recurringInterval)}`}
+                              >
+                                Recurring {formatIntervalLabel(campaign.recurringInterval)}
+                              </span>
+                            )}
+
+                            {(() => {
+                              const d = getLastDispatch(campaign);
+                              if (!d) return null;
+                              if (d.status === 'failed') {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedDetail(campaign);
+                                    }}
+                                    className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
+                                    title={d.error ? `Error: ${d.error}` : 'Tap for details'}
+                                  >
+                                    Last dispatch failed (tap for error)
+                                  </button>
+                                );
+                              }
+
+                              if (d.status === 'sent') {
+                                return (
+                                  <span
+                                    className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700"
+                                    title={d.dispatchedAt ? new Date(d.dispatchedAt).toLocaleString() : ''}
+                                  >
+                                    Last dispatch sent
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                  Last dispatch {d.status}
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           <p className="text-gray-600 text-sm mb-3 line-clamp-2">{campaign.message}</p>
@@ -602,6 +786,7 @@ const Campaigns = () => {
                                 </span>
                               </>
                             )}
+
                             <span>•</span>
                             <span>Created: {new Date(campaign.createdAt).toLocaleDateString()}</span>
                           </div>
@@ -616,7 +801,7 @@ const Campaigns = () => {
                             <FiEdit2 className="w-5 h-5" />
                           </button>
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleDelete(campaign._id); }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(campaign.id); }}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
                             title="Delete campaign"
                           >
@@ -640,10 +825,33 @@ const Campaigns = () => {
             <div><strong>Type:</strong> {selectedDetail.type}</div>
             <div><strong>Recipient Type:</strong> {selectedDetail.recipientType}</div>
             <div><strong>Group:</strong> {selectedDetail.group?.name || '—'}</div>
-            <div><strong>Recipients:</strong> {(selectedDetail.recipients || []).length}</div>
+            <div><strong>Recipients:</strong> {selectedDetail.recipientLinks?.length || (selectedDetail.recipients || []).length || 0}</div>
             <div><strong>Scheduled:</strong> {selectedDetail.schedule ? new Date(selectedDetail.schedule).toLocaleString() : '—'}</div>
+            <div>
+              <strong>Recurring:</strong>{' '}
+              {selectedDetail.recurringActive ? `Yes (${selectedDetail.recurringInterval || 'daily'})` : 'No'}
+            </div>
+            <div>
+              <strong>Last Dispatch:</strong>{' '}
+              {(() => {
+                const d = getLastDispatch(selectedDetail);
+                if (!d) return '—';
+                const when = d.dispatchedAt ? new Date(d.dispatchedAt).toLocaleString() : '—';
+                const scheduledFor = d.scheduledFor ? new Date(d.scheduledFor).toLocaleString() : '—';
+                return `${d.status} (scheduled: ${scheduledFor}, dispatched: ${when})`;
+              })()}
+            </div>
+            {(() => {
+              const d = getLastDispatch(selectedDetail);
+              if (!d || d.status !== 'failed') return null;
+              return (
+                <div>
+                  <strong>Dispatch Error:</strong> {d.error || '—'}
+                </div>
+              );
+            })()}
             <div><strong>Created:</strong> {new Date(selectedDetail.createdAt).toLocaleString()}</div>
-            <div><strong>Raw ID:</strong> <code>{selectedDetail._id}</code></div>
+            <div><strong>Raw ID:</strong> <code>{selectedDetail.id}</code></div>
           </div>
         )}
       </DetailPanel>

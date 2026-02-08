@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from '../api/axiosInstance';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { FiSend, FiUsers, FiMessageCircle, FiCalendar } from 'react-icons/fi';
@@ -15,22 +15,20 @@ const CreateCampaign = () => {
     recipients: [],
     group: '',
     schedule: '',
-    recurring: { active: false, interval: 'daily' }
+    recurring: { active: false, interval: 'daily' },
+    sendNow: true,
   });
   const [groups, setGroups] = useState([]);
-  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [charCount, setCharCount] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [groupsRes, contactsRes] = await Promise.all([
+        const [groupsRes] = await Promise.all([
           axios.get('/groups'),
-          axios.get('/contacts')
         ]);
         setGroups(groupsRes.data || []);
-        setContacts(contactsRes.data || []);
       } catch (error) {
         console.error('Error fetching data:', error);
         toast.error('Failed to load data');
@@ -50,24 +48,33 @@ const CreateCampaign = () => {
         ...form,
         recurring: { ...form.recurring, active: checked }
       });
+    } else if (name === 'sendNow') {
+      setForm({
+        ...form,
+        sendNow: checked,
+        schedule: checked ? '' : form.schedule,
+        recurring: checked ? { active: false, interval: 'daily' } : form.recurring,
+      });
     } else {
       setForm({ ...form, [name]: value });
     }
-  };
-
-  const handleRecipientToggle = (contactId) => {
-    setForm({
-      ...form,
-      recipients: form.recipients.includes(contactId)
-        ? form.recipients.filter((id) => id !== contactId)
-        : [...form.recipients, contactId]
-    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      if (!form.sendNow && !form.schedule) {
+        toast.error('Pick a schedule time (or choose Send now)');
+        setLoading(false);
+        return;
+      }
+      if (form.recurring?.active && !form.schedule) {
+        toast.error('Recurring requires a scheduled time');
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         name: form.name,
         message: form.message,
@@ -75,8 +82,8 @@ const CreateCampaign = () => {
         recipientType: form.recipientType,
         recipients: form.recipients.length > 0 ? form.recipients : undefined,
         group: form.group || undefined,
-        schedule: form.schedule || undefined,
-        recurring: form.recurring.active ? form.recurring : undefined
+        schedule: form.sendNow ? null : (form.schedule ? new Date(form.schedule).toISOString() : null),
+        recurring: (!form.sendNow && form.recurring.active) ? form.recurring : undefined
       };
 
       await axios.post('/campaign/create', payload);
@@ -175,7 +182,7 @@ const CreateCampaign = () => {
               >
                 <option value="">Select a group (or leave empty for broadcast)</option>
                 {groups.map((group) => (
-                  <option key={group._id} value={group._id}>
+                  <option key={group.id} value={group.id}>
                     {group.name}
                   </option>
                 ))}
@@ -185,22 +192,86 @@ const CreateCampaign = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <FiCalendar className="inline w-4 h-4 mr-1" />
-                Schedule Delivery (Optional)
+                Delivery Timing
               </label>
-              <input
-                name="schedule"
-                type="datetime-local"
-                value={form.schedule}
-                onChange={handleChange}
-                className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
-                style={{
-                  borderColor: '#D1D5DB',
-                  color: '#0F0D1D'
-                }}
-                min={new Date().toISOString().slice(0, 16)}
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave empty to send immediately</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="deliveryMode"
+                    checked={!!form.sendNow}
+                    onChange={() => setForm((prev) => ({
+                      ...prev,
+                      sendNow: true,
+                      schedule: '',
+                      recurring: { active: false, interval: 'daily' },
+                    }))}
+                  />
+                  Send now
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="deliveryMode"
+                    checked={!form.sendNow}
+                    onChange={() => setForm((prev) => ({ ...prev, sendNow: false }))}
+                  />
+                  Schedule for later
+                </label>
+              </div>
+
+              {!form.sendNow && (
+                <div className="mt-3">
+                  <input
+                    name="schedule"
+                    type="datetime-local"
+                    value={form.schedule}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                    style={{
+                      borderColor: '#D1D5DB',
+                      color: '#0F0D1D'
+                    }}
+                    min={new Date().toISOString().slice(0, 16)}
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Campaign scheduler will send automatically at this time.</p>
+                </div>
+              )}
             </div>
+
+            {!form.sendNow && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    name="recurring"
+                    checked={!!form.recurring?.active}
+                    onChange={handleChange}
+                    className="w-4 h-4"
+                  />
+                  Recurring schedule
+                </label>
+                {form.recurring?.active && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700">Repeat:</label>
+                    <select
+                      value={form.recurring?.interval || 'daily'}
+                      onChange={(e) => setForm((prev) => ({
+                        ...prev,
+                        recurring: { ...prev.recurring, interval: e.target.value },
+                      }))}
+                      className="px-3 py-2 border rounded-md"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500">Recurring campaigns re-schedule after each dispatch.</p>
+              </div>
+            )}
 
             <div className="pt-4">
               <button

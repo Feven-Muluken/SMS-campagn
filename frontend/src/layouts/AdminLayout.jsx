@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   FiBarChart2,
   FiUsers,
@@ -18,7 +18,10 @@ const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, setUser, refreshUser } = useUser();
+  // const { user, setUser, refreshUser } = useUser();
+  const { user, refreshUser } = useUser();
+
+  const MotionAside = motion.aside;
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, path: '/' },
@@ -58,7 +61,7 @@ const AdminLayout = () => {
       )}
 
       {/* Sidebar */}
-      <motion.aside
+      <MotionAside
         initial={false}
         animate={{
           x: sidebarOpen ? 0 : '-100%'
@@ -135,7 +138,7 @@ const AdminLayout = () => {
             <span>Logout</span>
           </button>
         </div>
-      </motion.aside>
+      </MotionAside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

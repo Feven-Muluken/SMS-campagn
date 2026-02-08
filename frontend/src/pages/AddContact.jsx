@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { FiUser, FiPhone, FiUsers, FiArrowLeft } from 'react-icons/fi';
 
@@ -33,7 +33,7 @@ const AddContact = () => {
           setForm({
             name: contact.name || '',
             phoneNumber: contact.phoneNumber || '',
-            groups: contact.groups?._id || contact.groups || ''
+            groups: contact.groups?.[0]?.id || contact.groups || ''
           });
         } catch (error) {
           console.error('Error fetching contact:', error);
@@ -164,7 +164,7 @@ const AddContact = () => {
               >
                 <option value="">Select a group</option>
                 {groups.map((group) => (
-                  <option key={group._id} value={group._id}>
+                  <option key={group.id} value={group.id}>
                     {group.name}
                   </option>
                 ))}

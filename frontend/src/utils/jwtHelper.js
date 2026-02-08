@@ -1,5 +1,3 @@
-import * as jwtLib from 'jwt-decode';
-
-const jwtDecode = jwtLib.default ?? jwtLib.jwtDecode ?? jwtLib;
+import { jwtDecode } from 'jwt-decode';
 
 export default jwtDecode;

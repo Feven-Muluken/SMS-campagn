@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   FiMessageCircle,
   FiHome,
@@ -14,8 +14,10 @@ import { useState } from 'react';
 const UserLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, setUser, refreshUser } = useUser();
+  const { user, refreshUser } = useUser();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const MotionAside = motion.aside;
 
   const menuItems = [
     { id: 'home', label: 'Home', icon: FiHome, path: '/home' },
@@ -48,7 +50,7 @@ const UserLayout = () => {
       )}
 
       {/* Sidebar */}
-      <motion.aside
+      <MotionAside
         initial={false}
         animate={{
           x: sidebarOpen ? 0 : '-100%'
@@ -116,7 +118,7 @@ const UserLayout = () => {
             <span>Logout</span>
           </button>
         </div>
-      </motion.aside>
+      </MotionAside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

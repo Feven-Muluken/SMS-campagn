@@ -1,7 +1,6 @@
 const africastalking = require('../config/africastalking');
-const Message = require('../models/Message');
 
-const sendSMS = async (phoneNumber, message) => {
+const sendSMS = async (phoneNumber, message, options = {}) => {
   try {
     if (!phoneNumber || !message) {
       throw new Error('Phone number and message are required');
@@ -12,10 +11,15 @@ const sendSMS = async (phoneNumber, message) => {
       throw new Error('Africa\'s Talking SMS service not initialized. Check API credentials.');
     }
 
-    const response = await sms.send({
+    const payload = {
       to: [phoneNumber],
-      message: message.trim()
-    });
+      message: message.trim(),
+    };
+
+    const from = (options.from || options.senderId || process.env.AT_SENDER_ID || '').trim();
+    if (from) payload.from = from;
+
+    const response = await sms.send(payload);
 
       // Log provider response for debugging
       console.log('Africa\'s Talking response:', JSON.stringify(response));

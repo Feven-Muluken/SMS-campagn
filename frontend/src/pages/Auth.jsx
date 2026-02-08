@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from '../api/axiosInstance';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import  jwtDecode   from '../utils/jwtHelper';
 import { toast } from 'sonner';
@@ -18,7 +18,7 @@ const Auth = () => {
     setIsLogin(location.pathname === '/login');
   }, [location.pathname]);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', password: '', role: '' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phoneNumber: '', password: '', role: '' });
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
   const navigate = useNavigate();
@@ -97,7 +97,7 @@ const handleLogin = async (e) => {
   };
 
   return (
-    <div className="relative flex h-screen overflow-hidden text'Inter', sans-serif;}">      
+    <div className="relative flex h-screen overflow-hidden font-sans">
       <motion.div
         key={isLogin ? 'welcome-right' : 'welcome-left'}
         initial={false}
@@ -129,7 +129,7 @@ const handleLogin = async (e) => {
           ></div>
           <div
             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full opacity-5"
-            style={{ backgroundColor: '#' }}
+            style={{ backgroundColor: '#FFFFFF' }}
           ></div>
         </div>
 
@@ -343,6 +343,31 @@ const handleLogin = async (e) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                       </svg>
                     </div>
+                  </div>
+
+                  <div className="relative">
+                    <label className="block text-sm font-medium mb-3" style={{ color: '#4B5563' }}>Phone Number</label>
+                    <div className="relative">
+                      <input
+                        name="phoneNumber"
+                        type="tel"
+                        placeholder="+251912345678"
+                        className="w-full p-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2 auth-input"
+                        style={{
+                          borderColor: '#D1D5DB',
+                          color: '#0F0D1D'
+                        }}
+                        value={registerForm.phoneNumber}
+                        onChange={(e) => setRegisterForm({ ...registerForm, phoneNumber: e.target.value })}
+                        pattern="^\+[1-9]\d{1,14}$"
+                        title="Use E.164 format e.g. +251912345678"
+                        required
+                      />
+                      <svg className="absolute right-0 top-1/2 transform -translate-y-1/2 w-5 h-5 pointer-events-none" style={{ color: '#6B7280' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h2l3 7-1.35 2.7a1 1 0 00.9 1.45H19" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Enter in international format (e.g., +251...)</p>
                   </div>
 
                   <div className="relative">

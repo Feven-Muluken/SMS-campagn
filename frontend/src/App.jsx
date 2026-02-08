@@ -17,6 +17,7 @@ import Users from './pages/Users';
 import CreateCampaign from './pages/CreateCampaign';
 import UserMessages from './pages/UserMessage';
 import DeliveryStatus from './pages/DeliveryStatus';
+import Unauthorized from './pages/Unauthorized';
 
 function App() {
   return (
@@ -67,7 +68,7 @@ function App() {
           
           <Route path="delivery-status" element={<DeliveryStatus />} />
           <Route path="/home"
-            element={<ProtectedRoute role='viewer'>
+            element={<ProtectedRoute role={['viewer', 'staff']}>
               <UserLayout />
             </ProtectedRoute>
             }
@@ -75,6 +76,8 @@ function App() {
             <Route index element={<UserHome />}/>
             <Route path='/home/my-messages' element={< UserMessages />}/>
           </Route>
+
+          <Route path='/unauthorized' element={<Unauthorized />} />
           
         </Routes>
       </Router>

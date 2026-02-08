@@ -1,13 +1,34 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const groupSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  members: [{ 
-    type: mongoose.Schema.Types.ObjectId, ref: 'Contact' 
-  }],
+class Group extends Model {}
+
+Group.init({
+  id: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    autoIncrement: true,
+    primaryKey: true,
+  },
+  name: {
+    type: DataTypes.STRING(150),
+    allowNull: false,
+  },
+  ownerId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: false,
+    field: 'owner_id',
+  },
+  // members: { 
+  //   type: DataTypes.INTEGER.UNSIGNED,
+  //   field: 'contacts' 
+  // },
   
+}, {
+  sequelize,
+  modelName: 'Group',
+  tableName: 'groups',
+  timestamps: true,
+  underscored: true,
 });
 
-
-module.exports = mongoose.model( 'Group', groupSchema );
+module.exports = Group;
