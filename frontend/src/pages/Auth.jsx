@@ -17,7 +17,7 @@ const Auth = () => {
   useEffect(() => {
     setIsLogin(location.pathname === '/login');
   }, [location.pathname]);
-  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '', rememberMe: false });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phoneNumber: '', password: '', role: '' });
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
@@ -31,18 +31,23 @@ const handleLogin = async (e) => {
   try {
     const res = await axios.post('/auth/login', {
       email: loginForm.email,
-      password: loginForm.password
+      password: loginForm.password,
+      rememberMe: loginForm.rememberMe   
     });
     
     const token = res.data.token;
     // store token and decode
-    localStorage.setItem('token', token);
-    refreshUser();
     const decoded = jwtDecode(token);
-    localStorage.getItem('token')            
-
     
-    console.log(jwtDecode(localStorage.getItem('token'))) 
+    if (loginForm.rememberMe){
+      localStorage.setItem('token', token);
+      sessionStorage.removeItem('token');
+    } else {
+      sessionStorage.setItem('token', token);
+      localStorage.removeItem('token');
+    }
+    refreshUser();
+    
     console.log('user role', decoded.role, token, decoded);
     // update context so ProtectedRoute sees the user immediately
     // if (typeof setUser === 'function') setUser(decoded);
@@ -270,19 +275,39 @@ const handleLogin = async (e) => {
                     </div> 
                   </div>
 
-                  <button
-                    type="submit"
-                    className="w-full text-white py-4 rounded-lg font-bold text-lg transition duration-200 shadow-lg hover:shadow-xl mt-8 auth-button"
-                    style={{
-                      backgroundColor: '#DF0A0A',
-                      boxShadow: '0 4px 15px rgba(223, 10, 10, 0.3)'
-                    }}
-                  >
-                    Login
-                  </button>
+                  <div className='mt-10'>
+
+                    <input
+                      type="checkbox" 
+                      checked={loginForm.rememberMe}
+                      onChange={(e) => setLoginForm({ ...loginForm, rememberMe: e.target.checked })}
+                      className="mr-3 leading-tight"
+                    />
+                    <label className="text-sm" style={{ color: '#6B7280' }}>Remember me</label>
+                    
+                    <button
+                      type="button"
+                      onClick={() => navigate('/forgot-password')}
+                      className="text-sm text-center mt-10 text-red-600 hover:underline mt-2 block w-full"
+                      style={{ color: '#DF0A0A' }}
+                    >
+                      Forget Password
+                    </button>
+                    <button
+                      type="submit"
+                      className="w-full text-white py-4 rounded-lg font-bold text-lg transition duration-200 shadow-lg hover:shadow-xl mt-4 auth-button"
+                      style={{
+                        backgroundColor: '#DF0A0A',
+                        boxShadow: '0 4px 15px rgba(223, 10, 10, 0.3)'
+                      }}
+                    >
+                      Login
+                    </button>
+                  </div>
+                  
                 </form>
 
-                <div className="mt-8 text-center">
+                <div className="mt-3 text-center">
                   <p className="text-sm mb-2" style={{ color: '#6B7280' }}>Don't have an account?<button
                     type="button"
                     onClick={switchToRegister}

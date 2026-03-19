@@ -449,7 +449,7 @@ const sendGroupSMS = async (req, res) => {
     }
 
     const group = await Group.findByPk(req.params.groupId, {
-      include: [{ model: Contact, as: 'members', attributes: ['id', 'phoneNumber', 'name'] }],
+      include: [{ model: Contact, as: 'members', through: { attributes: [] }, attributes: ['id', 'phoneNumber', 'name'] }],
     });
 
     if (!group) return res.status(404).json({ message: 'Group not found' });

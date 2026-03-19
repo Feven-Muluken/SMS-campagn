@@ -1,5 +1,38 @@
 const { Op } = require('sequelize');
-const { User, Campaign, Message, Contact, Group } = require('../models');
+const { User, Campaign, Message, Contact, Group, Company, CompanyUser, sequelize } = require('../models');
+
+const ALLOWED_COMPANY_PERMISSIONS = [
+  'dashboard.view',
+  'campaign.view',
+  'campaign.send',
+  'contact.view',
+  'contact.manage',
+  'group.view',
+  'group.manage',
+  'user.manage',
+  'sms.send',
+  'delivery.view',
+  'appointment.view',
+  'appointment.manage',
+  'inbox.view',
+  'inbox.reply',
+  'geo.send',
+  'billing.send',
+  'company.manage',
+];
+
+const sanitizePermissions = (permissions = []) => {
+  if (!Array.isArray(permissions)) return [];
+  return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(p))));
+};
+
+const toSlug = (value = '') =>
+  String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
 
 const admin = async (req, res) => {
   res.send('Admin page');
@@ -142,4 +175,164 @@ const getRecentActivity = async (req, res) => {
   }
 };
 
-module.exports = { admin, getAllUsers, updateUser, deleteUser, getDashboardStats, getRecentActivity };
+const getCompanies = async (req, res) => {
+  try {
+    const companies = await Company.findAll({
+      include: [{ association: 'memberships', attributes: ['id'] }],
+      order: [['created_at', 'DESC']],
+    });
+
+    const data = companies.map((company) => ({
+      ...company.toJSON(),
+      membersCount: company.memberships?.length || 0,
+    }));
+
+    return res.json({ data });
+  } catch (error) {
+    console.error('Fetch companies error:', error);
+    return res.status(500).json({ message: 'Failed to fetch companies' });
+  }
+};
+
+const createCompany = async (req, res) => {
+  try {
+    const {
+      name,
+      slug,
+      plan = 'starter',
+      status = 'trial',
+      contactEmail,
+      contactPhone,
+      timezone = 'Africa/Addis_Ababa',
+      permissions = [],
+    } = req.body || {};
+
+    if (!name) {
+      return res.status(400).json({ message: 'Company name is required' });
+    }
+
+    const normalizedSlug = toSlug(slug || name);
+    if (!normalizedSlug) {
+      return res.status(400).json({ message: 'Valid company slug is required' });
+    }
+
+    const existing = await Company.findOne({
+      where: {
+        [Op.or]: [{ name }, { slug: normalizedSlug }],
+      },
+    });
+    if (existing) {
+      return res.status(400).json({ message: 'Company with this name or slug already exists' });
+    }
+
+    const company = await Company.create({
+      name,
+      slug: normalizedSlug,
+      plan,
+      status,
+      contactEmail: contactEmail || null,
+      contactPhone: contactPhone || null,
+      timezone,
+      permissions: sanitizePermissions(permissions),
+    });
+
+    return res.status(201).json({ message: 'Company created successfully', company });
+  } catch (error) {
+    console.error('Create company error:', error);
+    return res.status(500).json({ message: 'Failed to create company' });
+  }
+};
+
+const updateCompanyPermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body || {};
+
+    const company = await Company.findByPk(id);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    company.permissions = sanitizePermissions(permissions);
+    await company.save();
+
+    return res.json({ message: 'Company permissions updated', company });
+  } catch (error) {
+    console.error('Update company permissions error:', error);
+    return res.status(500).json({ message: 'Failed to update permissions' });
+  }
+};
+
+const createCompanyUser = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id: companyId } = req.params;
+    const { name, email, password, phoneNumber, role = 'viewer', permissions = [] } = req.body || {};
+
+    if (!name || !email || !password) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    const company = await Company.findByPk(companyId, { transaction });
+    if (!company) {
+      await transaction.rollback();
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const existingUser = await User.findOne({ where: { email }, transaction });
+    if (existingUser) {
+      await transaction.rollback();
+      return res.status(400).json({ message: 'A user with this email already exists' });
+    }
+
+    const user = await User.create(
+      {
+        name,
+        email,
+        password,
+        phoneNumber: phoneNumber || null,
+        role,
+      },
+      { transaction }
+    );
+
+    const membership = await CompanyUser.create(
+      {
+        companyId: company.id,
+        userId: user.id,
+        role,
+        permissions: sanitizePermissions(permissions),
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    const safeUser = user.toJSON();
+    delete safeUser.password;
+
+    return res.status(201).json({
+      message: 'Company user created successfully',
+      user: safeUser,
+      membership,
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Create company user error:', error);
+    return res.status(500).json({ message: 'Failed to create company user' });
+  }
+};
+
+module.exports = {
+  admin,
+  getAllUsers,
+  updateUser,
+  deleteUser,
+  getDashboardStats,
+  getRecentActivity,
+  getCompanies,
+  createCompany,
+  updateCompanyPermissions,
+  createCompanyUser,
+};

@@ -22,7 +22,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { register, login } = require('../controllers/authController');
+const { register, login, forgotPassword, resetPassword } = require('../controllers/authController');
 const { authMiddleware, checkRole } = require('../middleware/authMiddleware');
 
 router.get('/', (req, res) => {
@@ -30,9 +30,11 @@ router.get('/', (req, res) => {
   // res.send('atuh page');
 });
 
-router.post('/admin/register', authMiddleware, checkRole(['admin']), register);
+router.post('/admin/register', authMiddleware, checkRole(['admin']),  register);
 
 router.post('/login', login);
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // router.get("/profile", verifyTokenyyy, (req, res) => {
 //   res.json({ message: "Profile data", user: req.user });

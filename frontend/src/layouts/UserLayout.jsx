@@ -33,6 +33,7 @@ const UserLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     refreshUser();
     navigate('/login');
   };

@@ -44,7 +44,9 @@ const resolveCampaignRecipients = async (campaign) => {
   let recipients = [...directContacts, ...directUsers];
 
   if (campaign.groupId) {
-    const group = await Group.findByPk(campaign.groupId, { include: [{ model: Contact, as: 'members' }] });
+    const group = await Group.findByPk(campaign.groupId, {
+      include: [{ model: Contact, as: 'members', through: { attributes: [] } }],
+    });
     if (group && group.members?.length) recipients = [...recipients, ...group.members];
   }
 

@@ -8,6 +8,9 @@ const CampaignRecipient = require('./CampaignRecipient');
 const CampaignDispatch = require('./CampaignDispatch');
 const Message = require('./Message');
 const Appointment = require('./Appointment');
+const Company = require('./Company');
+const CompanyUser = require('./CompanyUser');
+const ContactLocation = require('./ContactLocation');
 
 // User relations
 User.hasMany(Contact, { foreignKey: 'created_by_id', as: 'contacts' });
@@ -60,8 +63,32 @@ CampaignDispatch.belongsTo(Campaign, { foreignKey: 'campaign_id', as: 'campaign'
 Contact.hasMany(Appointment, { foreignKey: 'contact_id', as: 'appointments' });
 Appointment.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
 
+Contact.hasOne(ContactLocation, { foreignKey: 'contactId', as: 'location', onDelete: 'CASCADE' });
+ContactLocation.belongsTo(Contact, { foreignKey: 'contactId', as: 'contact' });
+
+// Company relations
+Company.belongsToMany(User, {
+  through: CompanyUser,
+  as: 'users',
+  foreignKey: 'companyId',
+  otherKey: 'userId',
+  constraints: false,
+});
+User.belongsToMany(Company, {
+  through: CompanyUser,
+  as: 'companies',
+  foreignKey: 'userId',
+  otherKey: 'companyId',
+  constraints: false,
+});
+Company.hasMany(CompanyUser, { foreignKey: 'companyId', as: 'memberships', constraints: false });
+CompanyUser.belongsTo(Company, { foreignKey: 'companyId', as: 'company', constraints: false });
+User.hasMany(CompanyUser, { foreignKey: 'userId', as: 'companyMemberships', constraints: false });
+CompanyUser.belongsTo(User, { foreignKey: 'userId', as: 'user', constraints: false });
+
 const syncDatabase = async () => {
-  await sequelize.sync({ alter: false });
+  const shouldAlter = process.env.DB_SYNC_ALTER === 'true';
+  await sequelize.sync({ alter: shouldAlter });
 };
 
 module.exports = {
@@ -75,5 +102,8 @@ module.exports = {
   CampaignDispatch,
   Message,
   Appointment,
+  Company,
+  CompanyUser,
+  ContactLocation,
   syncDatabase,
 };

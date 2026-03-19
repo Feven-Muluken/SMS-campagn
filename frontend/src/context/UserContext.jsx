@@ -9,7 +9,7 @@ export const UserProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const loadUserFromToken = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
     if (!token) { 
       setUser(null);
       setLoading(false);
@@ -21,12 +21,14 @@ export const UserProvider = ({ children }) => {
       const now = Date.now() / 1000;
       if (decoded.exp < now) {
         localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
         setUser(null);
       } else {
         setUser(decoded);
       }
     } catch {
       localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
       setUser(null);
     }
     setLoading(false);

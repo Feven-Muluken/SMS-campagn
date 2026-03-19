@@ -48,7 +48,9 @@ const sendCampaignMessages = async (req, res) => {
     recipients = [...directContacts, ...directUsers];
 
     if (campaign.groupId) {
-      const group = await Group.findByPk(campaign.groupId, { include: [{ model: Contact, as: 'members' }] });
+      const group = await Group.findByPk(campaign.groupId, {
+        include: [{ model: Contact, as: 'members', through: { attributes: [] } }],
+      });
       if (group && group.members?.length) {
         recipients = [...recipients, ...group.members];
       }
@@ -136,7 +138,9 @@ const sendGroupSMS = async (req, res) => {
       return res.status(400).json({ message: 'Invalid senderId. Use 1-11 alphanumeric characters (e.g. AbuMarket).' });
     }
 
-    const group = await Group.findByPk(groupId, { include: [{ model: Contact, as: 'members' }] });
+    const group = await Group.findByPk(groupId, {
+      include: [{ model: Contact, as: 'members', through: { attributes: [] } }],
+    });
     if (!group) {
       return res.status(404).json({ message: 'Group not found' });
     }
@@ -276,6 +280,19 @@ const sendContactsSMS = async (req, res) => {
     });
   }
 };
+
+const receiveInboundSMS = async (req, res) => {
+  return res.status(501).json({ message: 'Inbound SMS webhook is not implemented yet' });
+};
+
+const previewGeoAudience = async (req, res) => {
+  return res.status(501).json({ message: 'Geo audience preview is not implemented yet' });
+};
+
+const sendGeoSMS = async (req, res) => {
+  return res.status(501).json({ message: 'Geo SMS sending is not implemented yet' });
+};
+
 const getDeliveryStatus = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -331,4 +348,12 @@ const getDeliveryStatus = async (req, res) => {
   }
 };
 
-module.exports = { sendCampaignMessages, sendGroupSMS, sendContactsSMS, getDeliveryStatus };
+module.exports = {
+  sendCampaignMessages,
+  sendGroupSMS,
+  sendContactsSMS,
+  previewGeoAudience,
+  sendGeoSMS,
+  getDeliveryStatus,
+  receiveInboundSMS,
+};

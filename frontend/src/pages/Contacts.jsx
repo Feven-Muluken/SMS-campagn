@@ -7,7 +7,14 @@ import DetailPanel from '../components/DetailPanel';
 
 const Contacts = () => {
   const [contacts, setContacts] = useState([]);
-  const [form, setForm] = useState({ name: '', phoneNumber: '', groups: '' });
+  const [form, setForm] = useState({
+    name: '',
+    phoneNumber: '',
+    groups: '',
+    locationName: '',
+    latitude: '',
+    longitude: '',
+  });
   const [selectedContact, setSelectedContact] = useState(null);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +60,18 @@ const Contacts = () => {
       const payload = {
         name: form.name.trim(),
         phoneNumber: form.phoneNumber.trim(),
-        ...(form.groups && form.groups.trim() !== '' ? { groups: form.groups } : {})
+        ...(form.groups && form.groups.trim() !== '' ? { groups: form.groups } : {}),
+        ...(form.latitude && form.longitude
+          ? {
+              location: {
+                locationName: form.locationName?.trim() || undefined,
+                latitude: Number(form.latitude),
+                longitude: Number(form.longitude),
+                source: 'manual',
+                capturedAt: new Date().toISOString(),
+              },
+            }
+          : {}),
       };
 
       if (selectedContact) {
@@ -64,7 +82,7 @@ const Contacts = () => {
         toast.success('Contact created successfully');
       }
 
-      setForm({ name: '', phoneNumber: '', groups: '' });
+      setForm({ name: '', phoneNumber: '', groups: '', locationName: '', latitude: '', longitude: '' });
       setSelectedContact(null);
       setShowForm(false);
       fetchContacts();
@@ -94,14 +112,17 @@ const Contacts = () => {
     setForm({
       name: contact.name || '',
       phoneNumber: contact.phoneNumber || '',
-      groups: contact.groups?.[0]?.id || ''
+      groups: contact.groups?.[0]?.id || '',
+      locationName: contact.location?.locationName || '',
+      latitude: contact.location?.latitude || '',
+      longitude: contact.location?.longitude || '',
     });
     setShowForm(true);
   };
 
   const cancelEdit = () => {
     setSelectedContact(null);
-    setForm({ name: '', phoneNumber: '', groups: '' });
+    setForm({ name: '', phoneNumber: '', groups: '', locationName: '', latitude: '', longitude: '' });
     setShowForm(false);
   };
 
@@ -236,6 +257,45 @@ const Contacts = () => {
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Location Name (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Bole, Addis Ababa"
+                        value={form.locationName}
+                        onChange={(e) => setForm({ ...form, locationName: e.target.value })}
+                        className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                        style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Latitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="9.0120"
+                          value={form.latitude}
+                          onChange={(e) => setForm({ ...form, latitude: e.target.value })}
+                          className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                          style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Longitude</label>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="38.7613"
+                          value={form.longitude}
+                          onChange={(e) => setForm({ ...form, longitude: e.target.value })}
+                          className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                          style={{ borderColor: '#D1D5DB', color: '#0F0D1D' }}
+                        />
+                      </div>
                     </div>
 
                     <div className="flex gap-3 pt-4">

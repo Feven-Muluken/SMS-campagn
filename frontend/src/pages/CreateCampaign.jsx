@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import axios from '../api/axiosInstance';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FiSend, FiUsers, FiMessageCircle, FiCalendar } from 'react-icons/fi';
 
 const CreateCampaign = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form, setForm] = useState({
     name: '',
     message: '',
@@ -21,6 +22,30 @@ const CreateCampaign = () => {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [charCount, setCharCount] = useState(0);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+
+  const templates = [
+    {
+      id: 'promo-offer',
+      label: 'Promotion Offer',
+      content: 'Hi {{name}}, enjoy 20% off this week. Show this SMS at checkout. Reply STOP to opt out.',
+    },
+    {
+      id: 'payment-reminder',
+      label: 'Billing Reminder',
+      content: 'Hello {{name}}, this is a reminder that invoice #{{invoiceNo}} is due on {{dueDate}}. Thank you.',
+    },
+    {
+      id: 'appointment-reminder',
+      label: 'Appointment Reminder',
+      content: 'Reminder: your appointment is on {{date}} at {{time}}. Reply YES to confirm or NO to reschedule.',
+    },
+    {
+      id: 'support-followup',
+      label: 'Support Follow-up',
+      content: 'Hi {{name}}, checking in on your support request #{{ticketNo}}. Reply with any update needed.',
+    },
+  ];
 
   useEffect(() => {
     const fetchData = async () => {
@@ -40,6 +65,19 @@ const CreateCampaign = () => {
   useEffect(() => {
     setCharCount(form.message.length);
   }, [form.message]);
+
+  useEffect(() => {
+    if (searchParams.get('template') !== 'true' || form.message) return;
+    const starterTemplate = templates[0];
+    setSelectedTemplate(starterTemplate.id);
+    setForm((prev) => ({
+      ...prev,
+      message: starterTemplate.content,
+      name: prev.name || 'Template Campaign',
+    }));
+    // Only run once on first template deep-link load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -101,6 +139,17 @@ const CreateCampaign = () => {
   const getMessageParts = () => Math.ceil(charCount / 160) || 1;
   const getEstimatedCost = () => (getMessageParts() * 0.07).toFixed(2);
 
+  const handleTemplateChange = (e) => {
+    const templateId = e.target.value;
+    setSelectedTemplate(templateId);
+    const nextTemplate = templates.find((item) => item.id === templateId);
+    if (!nextTemplate) return;
+    setForm((prev) => ({
+      ...prev,
+      message: nextTemplate.content,
+    }));
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
       {/* Header */}
@@ -138,6 +187,29 @@ const CreateCampaign = () => {
                 required
                 maxLength={100}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                SMS Template Library
+              </label>
+              <select
+                value={selectedTemplate}
+                onChange={handleTemplateChange}
+                className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
+                style={{
+                  borderColor: '#D1D5DB',
+                  color: '#0F0D1D'
+                }}
+              >
+                <option value="">Custom message (no template)</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Select a template to auto-fill message content, then edit as needed.</p>
             </div>
 
             <div>

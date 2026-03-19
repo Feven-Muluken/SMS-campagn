@@ -1,15 +1,15 @@
 import { useUser } from '../context/UserContext';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { premiumFeatures } from '../utils/premiumFeatures';
 import { 
   FiBarChart2, 
   FiSend, 
   FiUsers, 
   FiUser,
   FiMessageCircle,
-  FiSettings,
-  FiDollarSign,
-  FiArrowRight
+  FiArrowRight,
+  FiBriefcase
 } from 'react-icons/fi';
 
 const Home = () => {
@@ -186,7 +186,58 @@ const Home = () => {
                 <p className="text-gray-600 text-sm">Manage platform users</p>
               </Link>
             </motion.div>
+
+            <motion.div
+              variants={cardVariants}
+              initial="hidden"
+              animate="visible"
+              transition={{ delay: 0.7 }}
+            >
+              <Link
+                to="/companies"
+                className="block bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-red-300 transition-all duration-300 group"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg" style={{ backgroundColor: '#FEE2E2' }}>
+                    <FiBriefcase className="w-6 h-6" style={{ color: '#DF0A0A' }} />
+                  </div>
+                  <FiArrowRight className="w-5 h-5 text-gray-400 group-hover:text-red-600 transition-colors" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Companies</h3>
+                <p className="text-gray-600 text-sm">Create client companies and configure access rights</p>
+              </Link>
+            </motion.div>
           </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7 }}
+            className="mt-12"
+          >
+            <div className="mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">Afroel SMS Premium Features</h3>
+              <p className="text-sm text-gray-600">Configured based on your Afroel SMS PDF requirements.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {premiumFeatures.map((feature) => (
+                <Link
+                  key={feature.title}
+                  to={feature.path}
+                  className="bg-white rounded-xl border border-gray-200 p-5 hover:border-red-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="font-semibold text-gray-900 mb-2">{feature.title}</h4>
+                    <span className={`text-xs px-2 py-1 rounded-full ${feature.available ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {feature.available ? 'Active' : 'Guide'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600">{feature.description}</p>
+                  <p className="text-sm text-red-600 mt-3 font-medium">{feature.cta}</p>
+                </Link>
+              ))}
+            </div>
+          </motion.div>
           {/* ) : ( 
            <motion.div
             initial={{ opacity: 0, y: 20 }}

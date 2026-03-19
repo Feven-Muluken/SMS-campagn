@@ -18,6 +18,14 @@ import CreateCampaign from './pages/CreateCampaign';
 import UserMessages from './pages/UserMessage';
 import DeliveryStatus from './pages/DeliveryStatus';
 import Unauthorized from './pages/Unauthorized';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import PremiumFeatureDetail from './pages/PremiumFeatureDetail';
+import AppointmentSystem from './pages/AppointmentSystem';
+import SupportInbox from './pages/SupportInbox';
+import GeoMarketing from './pages/GeoMarketing';
+import BillingAlerts from './pages/BillingAlerts';
+import Companies from './pages/Companies';
 
 function App() {
   return (
@@ -31,6 +39,8 @@ function App() {
             </ProtectedRoute>}
           />
           <Route path='/login' element={<Auth />}/>
+          <Route path='/forgot-password' element={<ForgotPassword />}/>
+          <Route path='/reset-password' element={<ResetPassword />}/>
           {/* <Route path='/home/' 
             element={<ProtectedRoute role='admin'>
               <Home/> 
@@ -49,24 +59,29 @@ function App() {
             </ProtectedRoute>}
           />
           <Route path='/' 
-            element={<ProtectedRoute role='admin'>
+            element={<ProtectedRoute role={['admin', 'staff']}>
               <AdminLayout />
             </ProtectedRoute>
           }
           >
             <Route index element={<Dashboard />}/>
-            <Route path='/campaign' element={<Campaigns />}/>
-            <Route path="/send-sms" element={<SendSMS />} />
-            <Route path='/contacts' element={<Contacts />}/>
-            <Route path='/groups' element={<Groups />}/>
-            <Route path='/users' element={<Users />}/>
-            <Route path='/CreateCampaign' element={<CreateCampaign />}/>
-            <Route path='/campaign/new' element={<CreateCampaign />}/>
+            <Route path='campaign' element={<Campaigns />}/>
+            <Route path='send-sms' element={<SendSMS />} />
+            <Route path='contacts' element={<Contacts />}/>
+            <Route path='groups' element={<Groups />}/>
+            <Route path='users' element={<Users />}/>
+            <Route path='companies' element={<Companies />}/>
+            <Route path='CreateCampaign' element={<CreateCampaign />}/>
+            <Route path='campaign/new' element={<CreateCampaign />}/>
+            <Route path='delivery-status' element={<DeliveryStatus />} />
+            <Route path='appointments' element={<AppointmentSystem />} />
+            <Route path='premium/ticketing-support' element={<SupportInbox />} />
+            <Route path='premium/two-way-chat' element={<SupportInbox />} />
+            <Route path='premium/geo-marketing' element={<GeoMarketing />} />
+            <Route path='premium/billing-alerts' element={<BillingAlerts />} />
+            <Route path='premium/:slug' element={<PremiumFeatureDetail />} />
           </Route>
-          <Route path='huy' element={< Dashboard/>}/>
-          {/* <Route path='/users' element={<Users />}/> */}
-          
-          <Route path="delivery-status" element={<DeliveryStatus />} />
+
           <Route path="/home"
             element={<ProtectedRoute role={['viewer', 'staff']}>
               <UserLayout />
@@ -74,7 +89,7 @@ function App() {
             }
           >
             <Route index element={<UserHome />}/>
-            <Route path='/home/my-messages' element={< UserMessages />}/>
+            <Route path='my-messages' element={< UserMessages />}/>
           </Route>
 
           <Route path='/unauthorized' element={<Unauthorized />} />

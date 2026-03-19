@@ -1,30 +1,45 @@
 const { Op } = require('sequelize');
-const { Contact, Group, sequelize } = require('../models');
+const { Contact, Group, ContactLocation, sequelize } = require('../models');
 
 const isValidPhoneNumber = (number) => /^\+[1-9]\d{1,14}$/.test(number);
 
-const createContact = async (req, res) => {
-  const { name, phoneNumber, groups } = req.body;
+const parseLocationPayload = (location) => {
+  if (!location || typeof location !== 'object') return null;
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return {
+    latitude,
+    longitude,
+    locationName: location.locationName || null,
+    source: location.source || 'manual',
+    capturedAt: location.capturedAt ? new Date(location.capturedAt) : new Date(),
+  };
+};
 
-  if (!phoneNumber) {
+const createContact = async (req, res) => {
+  const { name, phoneNumber, groups, location } = req.body;
+  const normalizedPhoneNumber = typeof phoneNumber === 'string' ? phoneNumber.trim() : phoneNumber;
+
+  if (!normalizedPhoneNumber) {
     return res.status(400).json({ message: 'Phone number is required' });
   }
 
-  if (!isValidPhoneNumber(phoneNumber)) {
+  if (!isValidPhoneNumber(normalizedPhoneNumber)) {
     return res.status(400).json({ message: 'Invalid phone number format. Must be in format: +[country code][number] (e.g., +251912345678)' });
   }
 
   try {
-    const existing = await Contact.findOne({ where: { phoneNumber }, include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }] });
+    const existing = await Contact.findOne({ where: { phoneNumber: normalizedPhoneNumber }, include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }] });
     if (existing) {
-      return res.status(200).json(existing);
+      return res.status(409).json({ message: 'Phone number already exists' });
     }
 
     const tx = await sequelize.transaction();
     try {
       const contact = await Contact.create({
-        name: name || phoneNumber,
-        phoneNumber,
+        name: name || normalizedPhoneNumber,
+        phoneNumber: normalizedPhoneNumber,
         createdById: req.user.id,
       }, { transaction: tx });
 
@@ -38,10 +53,24 @@ const createContact = async (req, res) => {
         await contact.setGroups(validGroups, { transaction: tx });
       }
 
+      const parsedLocation = parseLocationPayload(location);
+      if (parsedLocation) {
+        await ContactLocation.create(
+          {
+            contactId: contact.id,
+            ...parsedLocation,
+          },
+          { transaction: tx }
+        );
+      }
+
       await tx.commit();
 
       const populatedContact = await Contact.findByPk(contact.id, {
-        include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }],
+        include: [
+          { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
+          { model: ContactLocation, as: 'location' },
+        ],
       });
 
       res.status(201).json(populatedContact);
@@ -50,6 +79,9 @@ const createContact = async (req, res) => {
       throw error;
     }
   } catch (error) {
+    if (error?.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ message: 'Phone number already exists' });
+    }
     console.error('Create contact error:', error);
     res.status(500).json({ message: 'Failed to create contact', error: error.message });
   }
@@ -79,7 +111,10 @@ const getAllContacts = async (req, res) => {
 
     const { rows, count } = await Contact.findAndCountAll({
       where,
-      include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }],
+      include: [
+        { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
+        { model: ContactLocation, as: 'location' },
+      ],
       order: [[sortBy, sortDir]],
       limit: pageSize,
       offset: (page - 1) * pageSize,
@@ -100,13 +135,18 @@ const getAllContacts = async (req, res) => {
 
 const updateContact = async (req, res) => {
   try {
-    const { name, phoneNumber, groups } = req.body;
+    const { name, phoneNumber, groups, location } = req.body;
 
     if (phoneNumber && !isValidPhoneNumber(phoneNumber)) {
       return res.status(400).json({ message: 'Invalid phone number format' });
     }
 
-    const contact = await Contact.findByPk(req.params.id, { include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }] });
+    const contact = await Contact.findByPk(req.params.id, {
+      include: [
+        { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
+        { model: ContactLocation, as: 'location' },
+      ],
+    });
     if (!contact) return res.status(404).json({ message: 'Contact not found' });
 
     if (req.user.role !== 'admin' && contact.createdById !== req.user.id) {
@@ -139,10 +179,28 @@ const updateContact = async (req, res) => {
         }
       }
 
+      if (location !== undefined) {
+        const parsedLocation = parseLocationPayload(location);
+        if (!parsedLocation) {
+          await ContactLocation.destroy({ where: { contactId: contact.id }, transaction: tx });
+        } else {
+          await ContactLocation.upsert(
+            {
+              contactId: contact.id,
+              ...parsedLocation,
+            },
+            { transaction: tx }
+          );
+        }
+      }
+
       await tx.commit();
 
       const updatedContact = await Contact.findByPk(contact.id, {
-        include: [{ model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] }]
+        include: [
+          { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
+          { model: ContactLocation, as: 'location' },
+        ]
       });
 
       res.json(updatedContact);

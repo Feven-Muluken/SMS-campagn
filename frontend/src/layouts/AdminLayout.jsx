@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { motion } from 'motion/react';
+import { canAccess } from '../utils/permissions';
 import {
   FiBarChart2,
   FiUsers,
@@ -11,7 +12,8 @@ import {
   FiLogOut,
   FiMenu,
   FiX,
-  FiMessageCircle
+  FiMessageCircle,
+  FiBriefcase
 } from 'react-icons/fi';
 
 const AdminLayout = () => {
@@ -24,13 +26,20 @@ const AdminLayout = () => {
   const MotionAside = motion.aside;
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, path: '/' },
-    { id: 'campaigns', label: 'Campaign', icon: FiSend, path: '/campaign' },
-    { id: 'contacts', label: 'Contact', icon: FiPhone, path: '/contacts' },
-    { id: 'groups', label: 'Group', icon: FiUsers, path: '/groups' },
-    { id: 'users', label: 'User', icon: FiUser, path: '/users' },
-    { id: 'send-sms', label: 'SMS', icon: FiMessageCircle, path: '/send-sms' },
+    { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, path: '/', permission: 'dashboard.view' },
+    { id: 'campaigns', label: 'Campaign', icon: FiSend, path: '/campaign', permission: 'campaign.view' },
+    { id: 'contacts', label: 'Contact', icon: FiPhone, path: '/contacts', permission: 'contact.view' },
+    { id: 'groups', label: 'Group', icon: FiUsers, path: '/groups', permission: 'group.view' },
+    { id: 'users', label: 'User', icon: FiUser, path: '/users', permission: 'user.manage' },
+    { id: 'companies', label: 'Companies', icon: FiBriefcase, path: '/companies', permission: 'company.manage' },
+    { id: 'send-sms', label: 'Send SMS', icon: FiMessageCircle, path: '/send-sms', permission: 'sms.send' },
+    { id: 'delivery-status', label: 'Delivery', icon: FiBarChart2, path: '/delivery-status', permission: 'delivery.view' },
+    { id: 'appointments', label: 'Appointment', icon: FiBarChart2, path: '/appointments', permission: 'appointment.view' },
+    { id: 'inbox', label: 'Inbox Chat', icon: FiMessageCircle, path: '/premium/two-way-chat', permission: 'inbox.view' },
+    { id: 'geo', label: 'Geo SMS', icon: FiSend, path: '/premium/geo-marketing', permission: 'geo.send' },
+    { id: 'billing', label: 'Billing SMS', icon: FiPhone, path: '/premium/billing-alerts', permission: 'billing.send' },
   ];
+  const visibleMenuItems = menuItems.filter((item) => canAccess(user, item.permission));
 
   const handleNavigation = (path) => {
     navigate(path);
@@ -41,6 +50,7 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     refreshUser();
     navigate('/login');
   };
@@ -101,7 +111,7 @@ const AdminLayout = () => {
 
         {/* Navigation */}
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
@@ -154,7 +164,9 @@ const AdminLayout = () => {
               </button>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
-                  {menuItems.find(m => isActive(m.path))?.label == "Dashboard"? 'Admin Dashboard' : menuItems.find(m => isActive(m.path))?.label + " Management" }
+                  {visibleMenuItems.find(m => isActive(m.path))?.label === 'Dashboard'
+                    ? 'Admin Dashboard'
+                    : (visibleMenuItems.find(m => isActive(m.path))?.label || 'Management') + ' Management'}
                 </h2>
                 <p className="text-xs text-gray-500">Afroel SMS Campaign Platform</p>
               </div>

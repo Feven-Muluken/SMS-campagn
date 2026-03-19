@@ -18,10 +18,6 @@ Group.init({
     allowNull: false,
     field: 'owner_id',
   },
-  // members: { 
-  //   type: DataTypes.INTEGER.UNSIGNED,
-  //   field: 'contacts' 
-  // },
   
 }, {
   sequelize,
