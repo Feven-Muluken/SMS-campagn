@@ -1,8 +1,7 @@
 const { Op } = require('sequelize');
 const { Appointment, Contact, Message, sequelize } = require('../models');
 const { sendSMS } = require('./smsService');
-
-const isValidPhoneNumber = (number) => /^\+[1-9]\d{1,14}$/.test(number);
+const { isValidE164 } = require('../utils/phoneNormalize');
 
 const getTimeZone = () => process.env.APPT_TIMEZONE || process.env.TZ || 'UTC';
 
@@ -44,7 +43,7 @@ const templates = () => ({
     'Thank you for choosing {businessName}. We hope to see you again!',
 });
 
-const createMessageLog = async ({ appointment, content, status, response, sentAt }) => {
+const createMessageLog = async ({ appointment, content, status, response, sentAt, providerMessageId }) => {
   await Message.create({
     campaignId: null,
     recipientType: 'Contact',
@@ -54,6 +53,7 @@ const createMessageLog = async ({ appointment, content, status, response, sentAt
     status,
     response,
     sentAt: sentAt || null,
+    providerMessageId: providerMessageId || null,
   });
 };
 
@@ -71,12 +71,19 @@ const sendAppointmentSMS = async ({ appointment, type, senderId }) => {
 
   const content = renderTemplate(template, ctx).trim();
 
-  if (!appointment.phoneNumber || !isValidPhoneNumber(appointment.phoneNumber)) {
-    throw new Error('Appointment phoneNumber must be valid E.164 (e.g., +251912345678)');
+  if (!appointment.phoneNumber || !isValidE164(appointment.phoneNumber)) {
+    throw new Error('Appointment phoneNumber must be a valid E.164 number (e.g., +251912345678)');
   }
 
-  const response = await sendSMS(appointment.phoneNumber, content, { senderId });
-  await createMessageLog({ appointment, content, status: 'sent', response, sentAt: new Date() });
+  const { response, providerMessageId } = await sendSMS(appointment.phoneNumber, content, { senderId });
+  await createMessageLog({
+    appointment,
+    content,
+    status: 'sent',
+    response: { direction: 'outbound', providerResponse: response },
+    sentAt: new Date(),
+    providerMessageId,
+  });
 
   return { content, response };
 };

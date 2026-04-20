@@ -1,23 +1,26 @@
-import { Navigate, useLocation } from "react-router-dom";
-// import { isAdmin, expiredToken } from "../utils/auth";
-import { useUser } from "../context/UserContext";
-// import { BoldIcon } from "@heroicons/react/24/outline";
+import { Navigate } from 'react-router-dom';
+import { useUser } from '../context/UserContext';
 
-const ProtectedRoute = ({ children, role }) => {
-  const location = useLocation();
-  const { user, loading } = useUser();
-  if (loading) return <div>Loading...</div>;
+const normalizeRoles = (role) => (Array.isArray(role) ? role : role ? [role] : []);
 
-  if (!user) return <Navigate to="/login" replace />;
+const ProtectedRoute = ({ children, role, permission }) => {
+  const { user, loading, hasPermission } = useUser();
 
-  const requiredRoles = role ? (Array.isArray(role) ? role : [role]) : null;
-  if (requiredRoles) {
-    const normalizedUserRole = (user.role || '').toLowerCase();
-    const allowed = requiredRoles
-      .map(r => (r || '').toLowerCase())
-      .includes(normalizedUserRole);
+  if (loading) {
+    return <div className="min-h-[30vh] flex items-center justify-center text-sm text-gray-500">Loading…</div>;
+  }
 
-    if (!allowed) return <Navigate to="/unauthorized" replace state={{ from: location.pathname }} />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const allowedRoles = normalizeRoles(role).map((r) => String(r).toLowerCase());
+  if (allowedRoles.length && !allowedRoles.includes(String(user.role || '').toLowerCase())) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  if (permission && !hasPermission(permission)) {
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return children;

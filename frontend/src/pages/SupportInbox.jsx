@@ -52,8 +52,8 @@ const SupportInbox = () => {
   const selectedThread = threads.find((item) => item.phone === selectedPhone) || null;
 
   const sendReply = async () => {
-    if (!selectedThread?.contact?.id) {
-      toast.error('Reply requires a saved contact in the system');
+    if (!selectedThread?.phone) {
+      toast.error('No conversation selected');
       return;
     }
     if (!reply.trim()) {
@@ -63,10 +63,17 @@ const SupportInbox = () => {
 
     setLoading(true);
     try {
-      await axios.post('/sms/send-contacts', {
-        contactIds: [selectedThread.contact.id],
-        message: reply.trim(),
-      });
+      if (selectedThread.contact?.id) {
+        await axios.post('/sms/send-contacts', {
+          contactIds: [selectedThread.contact.id],
+          message: reply.trim(),
+        });
+      } else {
+        await axios.post('/sms/send-phone', {
+          phoneNumber: selectedThread.phone,
+          message: reply.trim(),
+        });
+      }
       toast.success('Reply sent');
       setReply('');
       fetchData();
@@ -79,9 +86,12 @@ const SupportInbox = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/admin" />
+      <BackButton fallbackPath="/" />
       <h1 className="text-2xl font-bold text-gray-900">{isTwoWay ? 'Two-Way SMS Chat' : 'SMS Ticketing & Support'}</h1>
-      <p className="text-sm text-gray-600 mt-1">Conversation inbox built from delivery/message records with direct reply support.</p>
+      <p className="text-sm text-gray-600 mt-1">
+        Inbox from stored messages. Inbound SMS requires the Africa&apos;s Talking webhook pointing to your server{' '}
+        <code className="text-xs bg-gray-100 px-1 rounded">POST /sms/inbound</code>. Reply works by contact or by phone number.
+      </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <div className="lg:col-span-1 bg-white border border-gray-200 rounded-xl p-4 max-h-[640px] overflow-auto">
@@ -93,7 +103,9 @@ const SupportInbox = () => {
                 onClick={() => setSelectedPhone(thread.phone)}
                 className={`w-full text-left rounded-lg border p-3 ${selectedPhone === thread.phone ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}
               >
-                <p className="font-medium text-gray-900">{thread.contact?.name || thread.phone}</p>
+                <p className="font-medium text-gray-900">
+                  {thread.contact?.name || thread.last?.recipientDisplayName || thread.phone}
+                </p>
                 <p className="text-xs text-gray-600 truncate">{thread.last?.content || 'No messages'}</p>
               </button>
             ))}
@@ -107,7 +119,9 @@ const SupportInbox = () => {
           ) : (
             <>
               <div className="pb-3 border-b border-gray-200">
-                <p className="font-semibold text-gray-900">{selectedThread.contact?.name || 'Unknown contact'}</p>
+                <p className="font-semibold text-gray-900">
+                  {selectedThread.contact?.name || selectedThread.last?.recipientDisplayName || 'Unknown contact'}
+                </p>
                 <p className="text-sm text-gray-600">{selectedThread.phone}</p>
               </div>
 

@@ -33,15 +33,32 @@ const BillingAlerts = () => {
     fetchData();
   }, []);
 
-  const message = useMemo(() => {
+  const messageTemplate = useMemo(() => {
     if (template === 'invoice_due') {
-      return `Invoice ${invoiceNo}: Amount ETB ${amount} is due on ${dueDate || 'your due date'}. Reply if you need support.`;
+      return 'Hi {{name}}, invoice {{invoiceNo}}: Amount ETB {{amount}} is due on {{dueDate}}. Reply if you need support.';
     }
     if (template === 'payment_received') {
-      return `Payment received for invoice ${invoiceNo}. Amount ETB ${amount}. Thank you.`;
+      return 'Hi {{name}}, payment received for invoice {{invoiceNo}}. Amount ETB {{amount}}. Thank you.';
     }
-    return `Reminder: Invoice ${invoiceNo} has an outstanding amount ETB ${amount}. Please settle by ${dueDate || 'the due date'}.`;
-  }, [template, invoiceNo, amount, dueDate]);
+    return 'Hi {{name}}, reminder: Invoice {{invoiceNo}} outstanding ETB {{amount}}. Please settle by {{dueDate}}.';
+  }, [template]);
+
+  const templateVars = useMemo(
+    () => ({
+      invoiceNo,
+      amount,
+      dueDate: dueDate || 'the due date',
+    }),
+    [invoiceNo, amount, dueDate]
+  );
+
+  const previewSample = useMemo(() => {
+    return messageTemplate
+      .replace(/\{\{name\}\}/g, 'Customer')
+      .replace(/\{\{invoiceNo\}\}/g, invoiceNo)
+      .replace(/\{\{amount\}\}/g, amount)
+      .replace(/\{\{dueDate\}\}/g, dueDate || 'the due date');
+  }, [messageTemplate, invoiceNo, amount, dueDate]);
 
   const toggleContact = (id) => {
     setSelectedContactIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -58,7 +75,8 @@ const BillingAlerts = () => {
         }
         await axios.post('/sms/send-contacts', {
           contactIds: selectedContactIds,
-          message,
+          message: messageTemplate,
+          templateVars,
         });
       } else {
         if (!groupId) {
@@ -68,7 +86,8 @@ const BillingAlerts = () => {
         }
         await axios.post('/sms/send-group', {
           groupId,
-          message,
+          message: messageTemplate,
+          templateVars,
         });
       }
 
@@ -82,9 +101,12 @@ const BillingAlerts = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/admin" />
+      <BackButton fallbackPath="/" />
       <h1 className="text-2xl font-bold text-gray-900">SMS Invoices & Billing Alerts</h1>
-      <p className="text-sm text-gray-600 mt-1">Send invoice reminders, payment confirmations, and billing follow-ups by SMS.</p>
+      <p className="text-sm text-gray-600 mt-1">
+        Manual sends from templates (not connected to accounting). Each contact sees their own name via{' '}
+        <code className="text-xs bg-gray-100 px-1 rounded">{'{{name}}'}</code> plus invoice fields.
+      </p>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-6 space-y-4">
@@ -101,7 +123,7 @@ const BillingAlerts = () => {
 
           <div>
             <p className="text-sm font-medium text-gray-700">Message preview</p>
-            <div className="mt-1 border border-gray-200 bg-gray-50 rounded-lg p-3 text-sm text-gray-800">{message}</div>
+            <div className="mt-1 border border-gray-200 bg-gray-50 rounded-lg p-3 text-sm text-gray-800">{previewSample}</div>
           </div>
 
           <div className="flex gap-2">

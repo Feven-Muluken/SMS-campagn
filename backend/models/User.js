@@ -37,6 +37,12 @@ User.init({
     allowNull: false,
     defaultValue: 'viewer',
   },
+  accountScope: {
+    type: DataTypes.ENUM('platform', 'tenant'),
+    allowNull: false,
+    defaultValue: 'platform',
+    field: 'account_scope',
+  },
 }, {
   sequelize,
   modelName: 'User',

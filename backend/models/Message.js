@@ -14,6 +14,11 @@ Message.init({
     allowNull: true,
     field: 'campaign_id',
   },
+  groupId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'group_id',
+  },
   recipientType: {
     type: DataTypes.ENUM('User', 'Contact'),
     allowNull: false,
@@ -46,6 +51,16 @@ Message.init({
     type: DataTypes.DATE,
     allowNull: true,
     field: 'sent_at',
+  },
+  providerMessageId: {
+    type: DataTypes.STRING(96),
+    allowNull: true,
+    field: 'provider_message_id',
+  },
+  networkDeliveryStatus: {
+    type: DataTypes.STRING(32),
+    allowNull: true,
+    field: 'network_delivery_status',
   },
 }, {
   sequelize,

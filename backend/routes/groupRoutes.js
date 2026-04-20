@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, checkRole } = require('../middleware/authMiddleware');
+const { requireCompanyMembership, requireCompanyPermission } = require('../middleware/companyAuthMiddleware');
 const {
   createGroup, addContactToGroup, sendGroupSMS,
   getAllGroups, updateGroup, deleteGroup
 } = require('../controllers/groupController');
 
-router.get('/', authMiddleware, getAllGroups);
-router.post('/create', authMiddleware, checkRole(['admin', 'staff']), createGroup);
-router.put('/:groupId', authMiddleware, checkRole(['admin', 'staff']), updateGroup);
-router.post('/:groupId/add', authMiddleware, checkRole(['admin', 'staff']), addContactToGroup);
-router.post('/:groupId/send', authMiddleware, checkRole(['admin']), sendGroupSMS);
-router.delete('/:groupId', authMiddleware, checkRole(['admin', 'staff']), deleteGroup);
+router.get('/', authMiddleware, requireCompanyMembership, requireCompanyPermission('group.view'), getAllGroups);
+router.post('/create', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('group.manage'), createGroup);
+router.put('/:groupId', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('group.manage'), updateGroup);
+router.post('/:groupId/add', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('group.manage'), addContactToGroup);
+router.post('/:groupId/send', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('sms.send'), sendGroupSMS);
+router.delete('/:groupId', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('group.manage'), deleteGroup);
 
 module.exports = router;

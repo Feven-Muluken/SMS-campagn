@@ -10,6 +10,8 @@ const instance = axios.create({
 instance.interceptors.request.use(config => {
   const token = localStorage.getItem('token') || sessionStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const activeCompanyId = localStorage.getItem('activeCompanyId') || sessionStorage.getItem('activeCompanyId');
+  if (activeCompanyId) config.headers['X-Company-Id'] = activeCompanyId;
   return config;
 });
 
@@ -19,6 +21,8 @@ instance.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       sessionStorage.removeItem('token');
+      localStorage.removeItem('memberCompanies');
+      sessionStorage.removeItem('memberCompanies');
       window.location.href = '/login';
     }
     return Promise.reject(error);

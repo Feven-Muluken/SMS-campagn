@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { FiSend, FiUsers, FiMessageCircle, FiPhone, FiUser } from 'react-icons/fi';
+import { FiSend, FiUsers, FiMessageCircle, FiPhone, FiUser, FiTag } from 'react-icons/fi';
 
 const SendSMS = () => {
   const [form, setForm] = useState({
     message: '',
-    sendType: 'campaign', // 'campaign', 'group', 'contact'
+    sendType: 'campaign', // 'campaign', 'group', 'contact', 'tags'
     campaignID: '',
     groupId: '',
     contactIds: [],
+    segmentTags: '',
+    matchAllSegment: false,
     senderId: ''
   });
   const [campaigns, setCampaigns] = useState([]);
@@ -28,10 +30,11 @@ const SendSMS = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const listParams = { pageSize: 500 };
         const [campaignsRes, groupsRes, contactsRes] = await Promise.all([
-          axios.get('/campaign'),
-          axios.get('/groups'),
-          axios.get('/contacts')
+          axios.get('/campaign', { params: listParams }),
+          axios.get('/groups', { params: listParams }),
+          axios.get('/contacts', { params: listParams }),
         ]);
         setCampaigns(toArray(campaignsRes.data));
         setGroups(toArray(groupsRes.data));
@@ -112,6 +115,27 @@ const SendSMS = () => {
           senderId: form.senderId || undefined
         };
         response = await axios.post('/sms/send-contacts', payload);
+      } else if (form.sendType === 'tags') {
+        const tags = form.segmentTags
+          .split(/[,;]/)
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        if (!tags.length) {
+          toast.error('Enter at least one segment tag');
+          setLoading(false);
+          return;
+        }
+        if (!form.message.trim()) {
+          toast.error('Please enter a message');
+          setLoading(false);
+          return;
+        }
+        response = await axios.post('/sms/send-tags', {
+          tags,
+          message: form.message,
+          matchAll: form.matchAllSegment,
+          senderId: form.senderId || undefined,
+        });
       }
 
       // Show success message with details if available
@@ -129,6 +153,8 @@ const SendSMS = () => {
         campaignID: '',
         groupId: '',
         contactIds: [],
+        segmentTags: '',
+        matchAllSegment: false,
         senderId: ''
       });
     } catch (error) {
@@ -194,10 +220,10 @@ const SendSMS = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Send To *
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, sendType: 'campaign', groupId: '', contactIds: [] })}
+                  onClick={() => setForm({ ...form, sendType: 'campaign', groupId: '', contactIds: [], segmentTags: '' })}
                   className={`p-3 rounded-lg border-2 transition-all ${form.sendType === 'campaign'
                       ? 'border-red-600 bg-red-50'
                       : 'border-gray-200 hover:border-gray-300'
@@ -208,7 +234,7 @@ const SendSMS = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, sendType: 'group', campaignID: '', contactIds: [] })}
+                  onClick={() => setForm({ ...form, sendType: 'group', campaignID: '', contactIds: [], segmentTags: '' })}
                   className={`p-3 rounded-lg border-2 transition-all ${form.sendType === 'group'
                       ? 'border-red-600 bg-red-50'
                       : 'border-gray-200 hover:border-gray-300'
@@ -219,7 +245,7 @@ const SendSMS = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, sendType: 'contact', campaignID: '', groupId: '' })}
+                  onClick={() => setForm({ ...form, sendType: 'contact', campaignID: '', groupId: '', segmentTags: '' })}
                   className={`p-3 rounded-lg border-2 transition-all ${form.sendType === 'contact'
                       ? 'border-red-600 bg-red-50'
                       : 'border-gray-200 hover:border-gray-300'
@@ -227,6 +253,17 @@ const SendSMS = () => {
                 >
                   <FiUser className="w-5 h-5 mx-auto mb-1" />
                   <span className="text-sm font-medium">Contacts</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, sendType: 'tags', campaignID: '', groupId: '', contactIds: [] })}
+                  className={`p-3 rounded-lg border-2 transition-all ${form.sendType === 'tags'
+                      ? 'border-red-600 bg-red-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                >
+                  <FiTag className="w-5 h-5 mx-auto mb-1" />
+                  <span className="text-sm font-medium">By segment</span>
                 </button>
               </div>
             </div>
@@ -304,6 +341,31 @@ const SendSMS = () => {
               </div>
             )}
 
+            {form.sendType === 'tags' && (
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Segment tags *</label>
+                <input
+                  name="segmentTags"
+                  type="text"
+                  placeholder="vip, wholesale (comma-separated)"
+                  value={form.segmentTags}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border-b-2 text-sm focus:outline-none"
+                  style={{ borderColor: '#D1D5DB' }}
+                />
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    name="matchAllSegment"
+                    checked={form.matchAllSegment}
+                    onChange={(e) => setForm({ ...form, matchAllSegment: e.target.checked })}
+                  />
+                  Match all tags (otherwise any tag)
+                </label>
+                <p className="text-xs text-gray-500">Set tags on each contact in Contacts. Use {'{{name}}'} in the message for personalization.</p>
+              </div>
+            )}
+
             {/* Contact Selection */}
             {form.sendType === 'contact' && (
               <div>
@@ -341,7 +403,7 @@ const SendSMS = () => {
             )}
 
             {/* Message Input (for group and contact types) */}
-            {(form.sendType === 'group' || form.sendType === 'contact') && (
+            {(form.sendType === 'group' || form.sendType === 'contact' || form.sendType === 'tags') && (
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-sm font-medium text-gray-700">

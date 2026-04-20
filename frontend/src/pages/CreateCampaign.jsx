@@ -24,6 +24,12 @@ const CreateCampaign = () => {
   const [charCount, setCharCount] = useState(0);
   const [selectedTemplate, setSelectedTemplate] = useState('');
 
+  const toArray = (maybe) => {
+    if (Array.isArray(maybe)) return maybe;
+    if (Array.isArray(maybe?.data)) return maybe.data;
+    return [];
+  };
+
   const templates = [
     {
       id: 'promo-offer',
@@ -51,9 +57,9 @@ const CreateCampaign = () => {
     const fetchData = async () => {
       try {
         const [groupsRes] = await Promise.all([
-          axios.get('/groups'),
+          axios.get('/groups', { params: { pageSize: 500 } }),
         ]);
-        setGroups(groupsRes.data || []);
+        setGroups(toArray(groupsRes.data));
       } catch (error) {
         console.error('Error fetching data:', error);
         toast.error('Failed to load data');
@@ -235,6 +241,9 @@ const CreateCampaign = () => {
                 required
                 maxLength={480}
               />
+              <p className="text-xs text-gray-500 mt-2">
+                Personalization: use {'{{name}}'}, {'{{phoneNumber}}'}, and for users {'{{email}}'}. Values are filled per recipient when the campaign is sent (including scheduled sends).
+              </p>
             </div>
 
             <div>

@@ -41,7 +41,7 @@ const Campaigns = () => {
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
-      const res = await axios.get('/campaign');
+      const res = await axios.get('/campaign', { params: { pageSize: 500 } });
       setCampaigns(toArray(res.data));
     } catch (error) {
       console.error('Error fetching campaigns:', error);
@@ -54,7 +54,7 @@ const Campaigns = () => {
 
   const fetchGroups = async () => {
     try {
-      const res = await axios.get('/groups');
+      const res = await axios.get('/groups', { params: { pageSize: 500 } });
       setGroups(toArray(res.data));
     } catch (error) {
       console.error('Error fetching groups:', error);
@@ -64,7 +64,7 @@ const Campaigns = () => {
 
   const fetchContacts = async () => {
     try {
-      const res = await axios.get('/contacts');
+      const res = await axios.get('/contacts', { params: { pageSize: 500 } });
       setContacts(toArray(res.data));
     } catch (error) {
       console.error('Error fetching contacts:', error);
@@ -114,6 +114,9 @@ const Campaigns = () => {
         try {
           const resp = await axios.post('/contacts', { name: newContactName || newContactPhone, phoneNumber: newContactPhone });
           const created = resp.data;
+          if (resp.status === 200) {
+            toast.success('That number was already a contact; added to recipients.');
+          }
           setContacts(prev => [created, ...prev]);
           setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created.id] }));
         } catch (contactErr) {
@@ -252,7 +255,11 @@ const Campaigns = () => {
       setForm(prev => ({ ...prev, recipients: [...(prev.recipients || []), created.id] }));
       setNewContactName('');
       setNewContactPhone('');
-      toast.success('Contact added');
+      if (resp.status === 200) {
+        toast.success('That number was already a contact; added to list.');
+      } else {
+        toast.success('Contact added');
+      }
     } catch (err) {
       console.error('Error adding contact:', err);
       toast.error(err.response?.data?.message || 'Failed to add contact');

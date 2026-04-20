@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from '../api/axiosInstance';
 import { toast } from 'sonner';
 import BackButton from '../components/BackButton';
+import { useUser } from '../context/UserContext';
 import { FiMapPin, FiSearch, FiSend, FiTarget } from 'react-icons/fi';
 
 const placeToLabel = (place) => {
@@ -11,6 +12,9 @@ const placeToLabel = (place) => {
 };
 
 const GeoMarketing = () => {
+  const { user } = useUser();
+  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+
   const [query, setQuery] = useState('');
   const [places, setPlaces] = useState([]);
   const [searchingPlaces, setSearchingPlaces] = useState(false);
@@ -21,6 +25,8 @@ const GeoMarketing = () => {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [preview, setPreview] = useState(null);
   const [sending, setSending] = useState(false);
+  const [includeSavedAddresses, setIncludeSavedAddresses] = useState(false);
+  const [openLiveAudience, setOpenLiveAudience] = useState(false);
 
   const selectedPlaceLabel = useMemo(() => placeToLabel(selectedPlace), [selectedPlace]);
 
@@ -56,30 +62,60 @@ const GeoMarketing = () => {
     }
   };
 
-  const runPreview = async () => {
-    if (!selectedPlace) {
-      toast.error('Select a place first');
-      return;
-    }
+  const geoRequestBody = useCallback(() => {
+    const geoSources = ['live'];
+    if (includeSavedAddresses) geoSources.push('saved');
+    const body = {
+      centerLat: selectedPlace.lat,
+      centerLng: selectedPlace.lon,
+      radiusKm,
+      placeName: selectedPlaceLabel,
+      geoSources,
+    };
+    if (isAdmin && openLiveAudience) body.openLiveAudience = true;
+    return body;
+  }, [selectedPlace, radiusKm, selectedPlaceLabel, includeSavedAddresses, openLiveAudience, isAdmin]);
 
-    setLoadingPreview(true);
-    try {
-      const res = await axios.post('/sms/geo/preview', {
-        centerLat: selectedPlace.lat,
-        centerLng: selectedPlace.lon,
-        radiusKm,
-        placeName: selectedPlaceLabel,
-      });
-      setPreview(res.data);
-      toast.success(`Found ${res.data.count} customer(s) in radius`);
-    } catch (error) {
-      console.error('Geo preview failed:', error);
-      toast.error(error.response?.data?.message || 'Failed to preview audience');
+  const runPreview = useCallback(
+    async (opts = {}) => {
+      const silent = Boolean(opts.silent);
+      if (!selectedPlace) {
+        if (!silent) toast.error('Select a place first');
+        return;
+      }
+
+      setLoadingPreview(true);
+      try {
+        const res = await axios.post('/sms/geo/preview', geoRequestBody());
+        setPreview(res.data);
+        if (!silent) {
+          const src = res.data.geoSources;
+          const parts = [];
+          if (src?.live) parts.push('live GPS');
+          if (src?.saved) parts.push('saved addresses');
+          toast.success(`${res.data.count} in radius (${parts.join(' + ') || '—'})`);
+        }
+      } catch (error) {
+        console.error('Geo preview failed:', error);
+        if (!silent) toast.error(error.response?.data?.message || 'Failed to preview audience');
+        setPreview(null);
+      } finally {
+        setLoadingPreview(false);
+      }
+    },
+    [selectedPlace, geoRequestBody]
+  );
+
+  useEffect(() => {
+    if (!selectedPlace) {
       setPreview(null);
-    } finally {
-      setLoadingPreview(false);
+      return undefined;
     }
-  };
+    const id = setTimeout(() => {
+      void runPreview({ silent: true });
+    }, 450);
+    return () => clearTimeout(id);
+  }, [selectedPlace, radiusKm, selectedPlaceLabel, includeSavedAddresses, openLiveAudience, isAdmin, runPreview]);
 
   const sendGeoCampaign = async (e) => {
     e.preventDefault();
@@ -89,17 +125,16 @@ const GeoMarketing = () => {
     setSending(true);
     try {
       const res = await axios.post('/sms/geo/send', {
-        centerLat: selectedPlace.lat,
-        centerLng: selectedPlace.lon,
-        radiusKm,
-        placeName: selectedPlaceLabel,
+        ...geoRequestBody(),
         message: message.trim(),
         senderId: senderId || undefined,
       });
 
-      toast.success(`${res.data.successCount} SMS sent in ${selectedPlaceLabel}`);
+      toast.success(
+        `${res.data.successCount} of ${res.data.total} SMS sent near ${selectedPlaceLabel} (${res.data.failCount || 0} failed)`
+      );
       setMessage('');
-      await runPreview();
+      await runPreview({ silent: true });
     } catch (error) {
       console.error('Geo SMS failed:', error);
       toast.error(error.response?.data?.message || 'Failed to send geo SMS');
@@ -110,13 +145,32 @@ const GeoMarketing = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/admin" />
+      <BackButton fallbackPath="/" />
 
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-900">Geo-SMS Marketing</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Search a real place (Addis Ababa, Ethiopia, or global), choose radius, then send SMS to customers located there.
+        <p className="text-sm text-gray-600 mt-1 max-w-3xl">
+          Choose a <strong>center point</strong> and <strong>radius</strong>. By default we use <strong>live GPS</strong> from your mobile app: the app posts the
+          user&apos;s current coordinates (no need to save lat/lng on the contact first). Optionally mix in{' '}
+          <strong>saved contact addresses</strong> from the database.
         </p>
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 space-y-2">
+          <p className="font-medium">How live GPS works</p>
+          <ul className="list-disc pl-5 space-y-1 text-emerald-900">
+            <li>
+              Your app calls <code className="text-xs bg-white/80 px-1 rounded">POST /sms/live-location/ping</code> with header{' '}
+              <code className="text-xs bg-white/80 px-1 rounded">X-Live-Location-Key</code> (same value as <code className="text-xs bg-white/80 px-1 rounded">LIVE_LOCATION_INGEST_KEY</code> on the server) and body{' '}
+              <code className="text-xs bg-white/80 px-1 rounded">phoneNumber</code>, <code className="text-xs bg-white/80 px-1 rounded">latitude</code>, <code className="text-xs bg-white/80 px-1 rounded">longitude</code>.
+            </li>
+            <li>
+              <strong>Staff:</strong> only pings from phone numbers that exist as <em>your</em> contacts are eligible (contact record still needed for the number—no saved map pin required).
+            </li>
+            <li>
+              <strong>Admin:</strong> optional &quot;open live audience&quot; includes recent pings even if the number is not in CRM (use carefully).
+            </li>
+            <li>Pings older than the server window (default 15 minutes, <code className="text-xs bg-white/80 px-1 rounded">LIVE_LOCATION_MAX_AGE_MINUTES</code>) are ignored.</li>
+          </ul>
+        </div>
 
         <div className="mt-6 bg-white border border-gray-200 rounded-xl p-6 space-y-5">
           <div>
@@ -181,29 +235,76 @@ const GeoMarketing = () => {
             />
           </div>
 
+          <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeSavedAddresses}
+                onChange={(e) => setIncludeSavedAddresses(e.target.checked)}
+                className="mt-1 h-4 w-4"
+              />
+              <span>
+                <span className="font-medium text-gray-800">Also include saved contact addresses</span>
+                <span className="block text-gray-600 text-xs mt-0.5">
+                  Uses Contacts → location coordinates in addition to live pings (merged, de-duplicated by phone).
+                </span>
+              </span>
+            </label>
+            {isAdmin ? (
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={openLiveAudience}
+                  onChange={(e) => setOpenLiveAudience(e.target.checked)}
+                  className="mt-1 h-4 w-4"
+                />
+                <span>
+                  <span className="font-medium text-gray-800">Admin: open live audience</span>
+                  <span className="block text-gray-600 text-xs mt-0.5">
+                    Send to any recent GPS ping in the radius, even if the phone number is not a contact.
+                  </span>
+                </span>
+              </label>
+            ) : null}
+          </div>
+
           <button
             type="button"
-            onClick={runPreview}
+            onClick={() => runPreview()}
             disabled={loadingPreview || !selectedPlace}
             className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 inline-flex items-center gap-2 disabled:opacity-60"
           >
-            <FiTarget /> {loadingPreview ? 'Checking...' : 'Preview Audience'}
+            <FiTarget /> {loadingPreview ? 'Checking...' : 'Refresh audience'}
           </button>
+          <p className="text-xs text-gray-500 -mt-2">
+            Audience updates automatically when you change place or radius; use refresh if you need to reload counts.
+          </p>
 
           {preview && (
             <div className="border border-gray-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-gray-900">Audience in radius: {preview.count}</p>
+              <p className="text-sm font-semibold text-gray-900">Recipients in radius: {preview.count}</p>
+              {preview.liveMaxAgeMinutes != null ? (
+                <p className="text-xs text-gray-500 mt-1">Live pings must be newer than ~{preview.liveMaxAgeMinutes} minutes.</p>
+              ) : null}
               {preview.contacts?.length > 0 ? (
                 <div className="mt-2 space-y-1 text-sm text-gray-600 max-h-40 overflow-auto">
-                  {preview.contacts.map((contact) => (
-                    <div key={contact.id} className="flex justify-between gap-2 border-b border-gray-100 py-1.5 last:border-b-0">
-                      <span>{contact.name || contact.phoneNumber}</span>
+                  {preview.contacts.map((contact, idx) => (
+                    <div
+                      key={`${contact.phoneNumber}-${contact.source}-${idx}`}
+                      className="flex justify-between gap-2 border-b border-gray-100 py-1.5 last:border-b-0"
+                    >
+                      <span>
+                        {contact.name || contact.phoneNumber}
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">{contact.source}</span>
+                      </span>
                       <span>{contact.distanceKm} km</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-gray-500 mt-1">No matched contacts with saved coordinates.</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  No matches. Ensure the app is posting live location, or enable saved addresses, or widen the radius.
+                </p>
               )}
             </div>
           )}
@@ -236,7 +337,7 @@ const GeoMarketing = () => {
               className="px-5 py-2 rounded-lg text-white inline-flex items-center gap-2 disabled:opacity-60"
               style={{ backgroundColor: '#DF0A0A' }}
             >
-              <FiSend /> {sending ? 'Sending...' : 'Send Geo Campaign'}
+              <FiSend /> {sending ? 'Sending...' : 'Send now to contacts in area'}
             </button>
           </form>
         </div>

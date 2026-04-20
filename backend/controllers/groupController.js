@@ -1,8 +1,8 @@
 const { Group, Contact, Message, User, GroupMember, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { sendSMS } = require('../services/smsService');
-
-const isValidPhoneNumber = (number) => /^\+[1-9]\d{1,14}$/.test(number);
+const { personalizeMessage } = require('../utils/smsTemplate');
+const { normalizeToE164 } = require('../utils/phoneNormalize');
 
 const normalizePhoneNumber = (value) => {
   if (value === null || value === undefined) return null;
@@ -160,10 +160,14 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
     }
 
     if (phoneNumber) {
-      if (!isValidPhoneNumber(phoneNumber)) {
-        invalid.push({ member, reason: 'Invalid phone number format (must be E.164 like +251912345678)' });
+      const e164 = normalizeToE164(phoneNumber);
+      if (!e164) {
+        invalid.push({
+          member,
+          reason: 'Invalid phone number (international or valid national format for DEFAULT_PHONE_REGION / DEFAULT_PHONE_COUNTRY_CODE)',
+        });
       } else {
-        requestedPhones.push({ phoneNumber, name });
+        requestedPhones.push({ phoneNumber: e164, name });
       }
       continue;
     }
@@ -192,21 +196,22 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
     }
 
     for (const user of foundUsers) {
-      const phoneNumber = normalizePhoneNumber(user.phoneNumber ?? user.phone_number);
-      if (!phoneNumber) {
+      const rawUserPhone = normalizePhoneNumber(user.phoneNumber ?? user.phone_number);
+      if (!rawUserPhone) {
         invalid.push({ member: { userId: user.id }, reason: 'User has no phoneNumber' });
         continue;
       }
-      if (!isValidPhoneNumber(phoneNumber)) {
-        invalid.push({ member: { userId: user.id, phoneNumber }, reason: 'User phoneNumber is not valid E.164' });
+      const userE164 = normalizeToE164(rawUserPhone);
+      if (!userE164) {
+        invalid.push({ member: { userId: user.id, phoneNumber: rawUserPhone }, reason: 'User phoneNumber is not a valid number' });
         continue;
       }
 
       const [contact] = await Contact.findOrCreate({
-        where: { phoneNumber },
+        where: { phoneNumber: userE164 },
         defaults: {
-          name: user.name || phoneNumber,
-          phoneNumber,
+          name: user.name || userE164,
+          phoneNumber: userE164,
           createdById,
         },
         transaction: tx,
@@ -245,7 +250,7 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
 const getAllGroups = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 100);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 500);
     const search = (req.query.search || '').trim();
     const sortBy = ['name', 'created_at', 'createdAt'].includes(req.query.sortBy)
       ? req.query.sortBy
@@ -253,18 +258,24 @@ const getAllGroups = async (req, res) => {
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
     const ilike = Op.iLike || Op.like;
 
+    const ownerScope = req.user?.role === 'admin' ? {} : { ownerId: req.user.id };
     const where = search
       ? {
-          [Op.or]: [
-            { name: { [ilike]: `%${search}%` } },
-          ],
+          ...ownerScope,
+          name: { [ilike]: `%${search}%` },
         }
-      : {};
+      : { ...ownerScope };
 
     const { rows, count } = await Group.findAndCountAll({
       where,
+      distinct: true,
       include: [
-        { model: Contact, as: 'members', through: { attributes: [] }, attributes: ['id', 'name', 'phoneNumber'] },
+        {
+          model: Contact,
+          as: 'members',
+          through: { attributes: [] },
+          attributes: ['id', 'name', 'phoneNumber'],
+        },
         { association: 'owner', attributes: ['id', 'name', 'email'] },
       ],
       order: [[sortBy, sortDir]],
@@ -397,7 +408,7 @@ const addContactToGroup = async (req, res) => {
 
     const contactIds = uniqueContacts.map((c) => c.id);
     const existingLinks = await GroupMember.findAll({
-      where: { groupId: group.id, contactId: contactIds },
+      where: { groupId: group.id, contactId: { [Op.in]: contactIds } },
       transaction: tx,
       attributes: ['contactId'],
     });
@@ -439,7 +450,7 @@ const addContactToGroup = async (req, res) => {
 
 const sendGroupSMS = async (req, res) => {
   try {
-    const { content, senderId } = req.body;
+    const { content, senderId, templateVars } = req.body;
     if (!content) return res.status(400).json({ message: 'Message content is required' });
 
     const normalizedSenderId = senderId === null || senderId === undefined ? null : String(senderId).trim();
@@ -467,28 +478,32 @@ const sendGroupSMS = async (req, res) => {
         failCount += 1;
         continue;
       }
+      const personalized = personalizeMessage(content, { contact: member, templateVars });
       try {
-        const response = await sendSMS(member.phoneNumber, content, { senderId: effectiveSenderId });
+        const { response, providerMessageId } = await sendSMS(member.phoneNumber, personalized, { senderId: effectiveSenderId });
         await Message.create({
           campaignId: null,
+          groupId: group.id,
           recipientType: 'Contact',
           recipientId: member.id,
           phoneNumber: member.phoneNumber,
-          content,
+          content: personalized,
           status: 'sent',
-          response,
+          response: { direction: 'outbound', providerResponse: response },
+          providerMessageId,
           sentAt: new Date(),
         });
         successCount += 1;
       } catch (error) {
         await Message.create({
           campaignId: null,
+          groupId: group.id,
           recipientType: 'Contact',
           recipientId: member.id,
           phoneNumber: member.phoneNumber,
-          content,
+          content: personalized,
           status: 'failed',
-          response: { error: error.message },
+          response: { direction: 'outbound', error: error.message },
         });
         failCount += 1;
       }

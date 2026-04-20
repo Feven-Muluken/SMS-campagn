@@ -10,6 +10,15 @@ const sequelize = new Sequelize({
   dialect: process.env.DB_DIALECT || 'mysql',
   logging: process.env.DB_LOGGING === 'true' ? console.log : false,
   timezone: '+00:00',
+  pool: {
+    max: Number(process.env.DB_POOL_MAX) || 10,
+    min: 0,
+    acquire: Number(process.env.DB_POOL_ACQUIRE_MS) || 60000,
+    idle: 10000,
+  },
+  dialectOptions: {
+    connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 15000,
+  },
 });
 
 const connectDB = async () => {

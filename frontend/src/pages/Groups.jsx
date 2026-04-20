@@ -24,7 +24,7 @@ const Groups = () => {
 
   const fetchGroups = async () => {
     try {
-      const res = await axios.get('/groups');
+      const res = await axios.get('/groups', { params: { pageSize: 500 } });
       setGroups(toArray(res.data));
     } catch (err) {
       console.error('Error fetching groups:', err);
@@ -34,7 +34,7 @@ const Groups = () => {
 
   const fetchContacts = async () => {
     try {
-      const res = await axios.get('/contacts');
+      const res = await axios.get('/contacts', { params: { pageSize: 500 } });
       setContacts(toArray(res.data));
     } catch (err) {
       console.error('Error fetching contacts:', err);

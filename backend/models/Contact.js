@@ -23,6 +23,12 @@ Contact.init({
     allowNull: false,
     field: 'created_by_id',
   },
+  /** JSON array of segment tags, e.g. ["vip","retail"] */
+  tags: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+  },
 }, {
   sequelize,
   modelName: 'Contact',

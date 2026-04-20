@@ -19,11 +19,6 @@ GroupMember.init({
     allowNull: false,
     field: 'contact_id',
   },
-  usesrId: {
-    type: DataTypes.INTEGER.UNSIGNED,
-    allowNull: false,
-    field: 'user_id',
-  },
 }, {
   sequelize,
   modelName: 'GroupMember',
@@ -33,10 +28,10 @@ GroupMember.init({
   indexes: [
     {
       unique: true,
-      fields: ['group_id', 'contact_id', 'user_id'],
+      fields: ['group_id', 'contact_id'],
       name: 'idx_group_member_unique',
-    }
-  ]
+    },
+  ],
 });
 
 module.exports = GroupMember;

@@ -104,7 +104,7 @@ const AppointmentSystem = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/admin" />
+      <BackButton fallbackPath="/" />
       <h1 className="text-2xl font-bold text-gray-900">SMS Appointment System</h1>
       <p className="text-sm text-gray-600 mt-1">Create appointments and automate confirmation, reminders, cancellations, and follow-up messages.</p>
 

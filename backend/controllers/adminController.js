@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { User, Campaign, Message, Contact, Group, Company, CompanyUser, sequelize } = require('../models');
+const { User, Campaign, Message, Contact, Group, Company, CompanyUser, CompanyPermission } = require('../models');
 
 const ALLOWED_COMPANY_PERMISSIONS = [
   'dashboard.view',
@@ -21,9 +21,13 @@ const ALLOWED_COMPANY_PERMISSIONS = [
   'company.manage',
 ];
 
+const wherePlatformUser = {
+  [Op.or]: [{ accountScope: 'platform' }, { accountScope: null }],
+};
+
 const sanitizePermissions = (permissions = []) => {
   if (!Array.isArray(permissions)) return [];
-  return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(p))));
+  return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(String(p)))));
 };
 
 const toSlug = (value = '') =>
@@ -33,6 +37,17 @@ const toSlug = (value = '') =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 120);
+
+const normalizeCompanyUserRole = (value) => {
+  const raw = String(value || 'viewer').trim().toLowerCase();
+  if (raw === 'company_admin' || raw === 'admin') {
+    return { membershipRole: 'admin', platformRole: 'staff', uiRole: 'company_admin' };
+  }
+  if (raw === 'staff') {
+    return { membershipRole: 'staff', platformRole: 'staff', uiRole: 'staff' };
+  }
+  return { membershipRole: 'viewer', platformRole: 'viewer', uiRole: 'viewer' };
+};
 
 const admin = async (req, res) => {
   res.send('Admin page');
@@ -49,7 +64,7 @@ const getAllUsers = async (req, res) => {
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
 
     const ilike = Op.iLike || Op.like;
-    const where = search
+    const searchWhere = search
       ? {
           [Op.or]: [
             { name: { [ilike]: `%${search}%` } },
@@ -58,6 +73,8 @@ const getAllUsers = async (req, res) => {
           ],
         }
       : {};
+
+    const where = { ...searchWhere, ...wherePlatformUser };
 
     const { rows, count } = await User.findAndCountAll({
       where,
@@ -85,6 +102,11 @@ const updateUser = async (req, res) => {
     const { name, email, role, phoneNumber, password } = req.body;
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.accountScope === 'tenant') {
+      return res.status(400).json({
+        message: 'This account is a company user. Manage it under Company access for that organization.',
+      });
+    }
 
     if (email && email !== user.email) {
       const exists = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } });
@@ -110,6 +132,13 @@ const updateUser = async (req, res) => {
 
 const deleteUser = async (req, res) => {
   try {
+    const existing = await User.findByPk(req.params.id);
+    if (!existing) return res.status(404).json({ message: 'User does not exist' });
+    if (existing.accountScope === 'tenant') {
+      return res.status(400).json({
+        message: 'Remove company users from Company access, not from User Management.',
+      });
+    }
     const deleted = await User.destroy({ where: { id: req.params.id } });
     if (!deleted) return res.status(404).json({ message: 'User does not exist' });
     res.json({ message: 'User deleted' });
@@ -122,11 +151,11 @@ const deleteUser = async (req, res) => {
 const getDashboardStats = async (req, res) => {
   try {
     const [userCount, contactCount, campaignCount, messageCount, groupCount] = await Promise.all([
-      User.count(),
+      User.count({ where: wherePlatformUser }),
       Contact.count(),
       Campaign.count(),
       Message.count(),
-      Group.count()
+      Group.count(),
     ]);
     res.json({ userCount, contactCount, campaignCount, messageCount, groupCount });
   } catch (error) {
@@ -146,29 +175,17 @@ const getRecentActivity = async (req, res) => {
     const recentMessages = await Message.findAll({
       order: [['created_at', 'DESC']],
       limit: 10,
-      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      include: [
+        {
+          association: 'campaign',
+          required: false,
+          attributes: ['id', 'name', 'groupId'],
+          include: [{ model: Group, as: 'group', required: false, attributes: ['id', 'name'] }],
+        },
+      ],
     });
 
-    const contactIds = recentMessages.filter((m) => m.recipientType === 'Contact').map((m) => m.recipientId);
-    const userIds = recentMessages.filter((m) => m.recipientType === 'User').map((m) => m.recipientId);
-
-    const [contacts, users] = await Promise.all([
-      contactIds.length ? Contact.findAll({ where: { id: contactIds } }) : [],
-      userIds.length ? User.findAll({ where: { id: userIds }, attributes: { exclude: ['password'] } }) : [],
-    ]);
-
-    const contactsMap = Object.fromEntries(contacts.map((c) => [c.id, c]));
-    const usersMap = Object.fromEntries(users.map((u) => [u.id, u]));
-
-    const formattedMessages = recentMessages.map((msg) => {
-      const recipient = msg.recipientType === 'Contact' ? contactsMap[msg.recipientId] : usersMap[msg.recipientId];
-      return {
-        ...msg.toJSON(),
-        recipient: recipient ? { id: recipient.id, name: recipient.name || recipient.email, phoneNumber: recipient.phoneNumber || null } : null,
-      };
-    });
-
-    res.json({ recentCampaigns, recentMessages: formattedMessages });
+    res.json({ recentCampaigns, recentMessages });
   } catch (error) {
     console.error('Recent activity error:', error);
     res.status(500).json({ message: 'Failed to fetch recent activity' });
@@ -225,6 +242,9 @@ const createCompany = async (req, res) => {
       return res.status(400).json({ message: 'Company with this name or slug already exists' });
     }
 
+    const sanitized = sanitizePermissions(permissions);
+    const enabledSet = new Set(sanitized);
+
     const company = await Company.create({
       name,
       slug: normalizedSlug,
@@ -233,8 +253,19 @@ const createCompany = async (req, res) => {
       contactEmail: contactEmail || null,
       contactPhone: contactPhone || null,
       timezone,
-      permissions: sanitizePermissions(permissions),
+      createdById: req.user?.id || null,
+      permissions: sanitized,
     });
+
+    await CompanyPermission.bulkCreate(
+      ALLOWED_COMPANY_PERMISSIONS.map((permissionKey) => ({
+        companyId: company.id,
+        permissionKey,
+        isEnabled: enabledSet.has(permissionKey),
+        config: {},
+        grantedById: req.user?.id || null,
+      }))
+    );
 
     return res.status(201).json({ message: 'Company created successfully', company });
   } catch (error) {
@@ -264,50 +295,40 @@ const updateCompanyPermissions = async (req, res) => {
 };
 
 const createCompanyUser = async (req, res) => {
-  const transaction = await sequelize.transaction();
   try {
     const { id: companyId } = req.params;
     const { name, email, password, phoneNumber, role = 'viewer', permissions = [] } = req.body || {};
+    const normalizedRole = normalizeCompanyUserRole(role);
 
     if (!name || !email || !password) {
-      await transaction.rollback();
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
 
-    const company = await Company.findByPk(companyId, { transaction });
+    const company = await Company.findByPk(companyId);
     if (!company) {
-      await transaction.rollback();
       return res.status(404).json({ message: 'Company not found' });
     }
 
-    const existingUser = await User.findOne({ where: { email }, transaction });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      await transaction.rollback();
       return res.status(400).json({ message: 'A user with this email already exists' });
     }
 
-    const user = await User.create(
-      {
-        name,
-        email,
-        password,
-        phoneNumber: phoneNumber || null,
-        role,
-      },
-      { transaction }
-    );
+    const user = await User.create({
+      name,
+      email,
+      password,
+      phoneNumber: phoneNumber || null,
+      role: normalizedRole.platformRole,
+      accountScope: 'tenant',
+    });
 
-    const membership = await CompanyUser.create(
-      {
-        companyId: company.id,
-        userId: user.id,
-        role,
-        permissions: sanitizePermissions(permissions),
-      },
-      { transaction }
-    );
-
-    await transaction.commit();
+    const membership = await CompanyUser.create({
+      companyId: company.id,
+      userId: user.id,
+      role: normalizedRole.membershipRole,
+      permissions: sanitizePermissions(permissions),
+    });
 
     const safeUser = user.toJSON();
     delete safeUser.password;
@@ -316,9 +337,9 @@ const createCompanyUser = async (req, res) => {
       message: 'Company user created successfully',
       user: safeUser,
       membership,
+      companyRole: normalizedRole.uiRole,
     });
   } catch (error) {
-    await transaction.rollback();
     console.error('Create company user error:', error);
     return res.status(500).json({ message: 'Failed to create company user' });
   }

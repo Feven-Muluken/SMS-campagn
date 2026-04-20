@@ -4,8 +4,7 @@ const {
   sendConfirmationIfNeeded,
   sendCancellationIfNeeded,
 } = require('../services/appointmentNotificationService');
-
-const isValidPhoneNumber = (number) => /^\+[1-9]\d{1,14}$/.test(number);
+const { normalizeToE164, isValidE164 } = require('../utils/phoneNormalize');
 
 const parseDate = (value) => {
   const d = value instanceof Date ? value : new Date(value);
@@ -122,9 +121,16 @@ const createAppointment = async (req, res) => {
       return res.status(400).json({ message: 'phoneNumber is required (or provide contactId)' });
     }
 
-    if (!isValidPhoneNumber(resolvedPhone)) {
+    if (!resolvedContactId) {
+      const normalized = normalizeToE164(resolvedPhone);
+      if (!isValidE164(normalized)) {
+        await tx.rollback();
+        return res.status(400).json({ message: 'Invalid phoneNumber format. Must be E.164 like +251912345678' });
+      }
+      resolvedPhone = normalized;
+    } else if (!isValidE164(resolvedPhone)) {
       await tx.rollback();
-      return res.status(400).json({ message: 'Invalid phoneNumber format. Must be E.164 like +251912345678' });
+      return res.status(400).json({ message: 'Invalid phoneNumber on file. Must be a valid E.164 number.' });
     }
 
     const appointment = await Appointment.create(
@@ -178,9 +184,13 @@ const updateAppointment = async (req, res) => {
       return res.status(400).json({ message: 'scheduledAt must be a valid datetime' });
     }
 
-    const nextPhone = body.phoneNumber !== undefined ? body.phoneNumber : appointment.phoneNumber;
-    if (body.phoneNumber !== undefined && !isValidPhoneNumber(nextPhone)) {
-      return res.status(400).json({ message: 'Invalid phoneNumber format. Must be E.164 like +251912345678' });
+    let nextPhone = body.phoneNumber !== undefined ? body.phoneNumber : appointment.phoneNumber;
+    if (body.phoneNumber !== undefined) {
+      const normalized = normalizeToE164(body.phoneNumber);
+      if (!isValidE164(normalized)) {
+        return res.status(400).json({ message: 'Invalid phoneNumber format. Must be E.164 like +251912345678' });
+      }
+      nextPhone = normalized;
     }
 
     const prevScheduledAt = appointment.scheduledAt;

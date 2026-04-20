@@ -3,8 +3,11 @@ import {Toaster} from 'sonner';
 // import { useUser } from './context/UserContext';
 
 import Auth from './pages/Auth';
-import Home from './pages/Home';
-import AdminLayout from './layouts/AdminLayout';
+import PlatformHub from './pages/PlatformHub';
+import CompanyHome from './pages/CompanyHome';
+import AdminWorkspaceHome from './pages/AdminWorkspaceHome';
+import MainWorkspaceGate from './components/MainWorkspaceGate';
+import CompanyWorkspaceGate from './components/CompanyWorkspaceGate';
 import UserLayout from './layouts/UserLayout';
 import ProtectedRoute from './components/ProtectesRoute';
 import UserHome from './pages/userhome';
@@ -20,12 +23,10 @@ import DeliveryStatus from './pages/DeliveryStatus';
 import Unauthorized from './pages/Unauthorized';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import PremiumFeatureDetail from './pages/PremiumFeatureDetail';
-import AppointmentSystem from './pages/AppointmentSystem';
-import SupportInbox from './pages/SupportInbox';
-import GeoMarketing from './pages/GeoMarketing';
-import BillingAlerts from './pages/BillingAlerts';
 import Companies from './pages/Companies';
+import CompanyAccess from './pages/CompanyAccess';
+import AdminLegacyRedirect from './components/AdminLegacyRedirect';
+import PlatformShell from './components/PlatformShell';
 
 function App() {
   return (
@@ -53,35 +54,34 @@ function App() {
           /> */}
           {/* <Route path='/UserHome' element={<UserHome />}/> */}
           
-          <Route path='/admin'
-            element={<ProtectedRoute role='admin'>
-              <Home/> 
-            </ProtectedRoute>}
-          />
-          <Route path='/' 
-            element={<ProtectedRoute role={['admin', 'staff']}>
-              <AdminLayout />
-            </ProtectedRoute>
-          }
+          <Route path="/platform" element={<PlatformShell />}>
+            <Route index element={<PlatformHub />} />
+          </Route>
+          <Route path="/admin" element={<AdminLegacyRedirect />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute role={['admin', 'staff']} allowCompanyWorkspace>
+                <MainWorkspaceGate />
+              </ProtectedRoute>
+            }
           >
             <Route index element={<Dashboard />}/>
-            <Route path='campaign' element={<Campaigns />}/>
-            <Route path='send-sms' element={<SendSMS />} />
-            <Route path='contacts' element={<Contacts />}/>
-            <Route path='groups' element={<Groups />}/>
-            <Route path='users' element={<Users />}/>
-            <Route path='companies' element={<Companies />}/>
-            <Route path='CreateCampaign' element={<CreateCampaign />}/>
-            <Route path='campaign/new' element={<CreateCampaign />}/>
-            <Route path='delivery-status' element={<DeliveryStatus />} />
-            <Route path='appointments' element={<AppointmentSystem />} />
-            <Route path='premium/ticketing-support' element={<SupportInbox />} />
-            <Route path='premium/two-way-chat' element={<SupportInbox />} />
-            <Route path='premium/geo-marketing' element={<GeoMarketing />} />
-            <Route path='premium/billing-alerts' element={<BillingAlerts />} />
-            <Route path='premium/:slug' element={<PremiumFeatureDetail />} />
+            <Route path='/campaign' element={<Campaigns />}/>
+            <Route path="/send-sms" element={<SendSMS />} />
+            <Route path='/contacts' element={<Contacts />}/>
+            <Route path='/groups' element={<Groups />}/>
+            <Route path="users" element={<ProtectedRoute permission="user.manage"><Users /></ProtectedRoute>} />
+            <Route path='/users' element={<Users />}/>
+            <Route path="companies" element={<ProtectedRoute permission="company.manage"><Companies /></ProtectedRoute>} />
+            <Route path="company-access" element={<ProtectedRoute permission="company.manage"><CompanyAccess /></ProtectedRoute>} />
+            <Route path='/CreateCampaign' element={<CreateCampaign />}/>
+            <Route path='/campaign/new' element={<CreateCampaign />}/>
+            <Route path="delivery-status" element={<ProtectedRoute permission="delivery.view"><DeliveryStatus /></ProtectedRoute>} />
           </Route>
-
+          <Route path='huy' element={< Dashboard/>}/>
+          {/* <Route path='/users' element={<Users />}/> */}
+          
           <Route path="/home"
             element={<ProtectedRoute role={['viewer', 'staff']}>
               <UserLayout />
@@ -89,7 +89,7 @@ function App() {
             }
           >
             <Route index element={<UserHome />}/>
-            <Route path='my-messages' element={< UserMessages />}/>
+            <Route path='/home/my-messages' element={< UserMessages />}/>
           </Route>
 
           <Route path='/unauthorized' element={<Unauthorized />} />

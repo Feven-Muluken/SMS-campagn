@@ -9,6 +9,7 @@ const { syncDatabase } = require('./models');
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
@@ -38,6 +39,8 @@ const groupRoutes = require('./routes/groupRoutes');
 const campaignRoutes = require('./routes/campaignRoutes')
 const contactRoutes = require('./routes/contactRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
+const companyRoutes = require('./routes/companyRoutes');
+const companyPermissionRoutes = require('./routes/companyPermissionRoutes');
 const { startAppointmentScheduler } = require('./services/appointmentNotificationService');
 const { startCampaignScheduler } = require('./services/campaignSchedulerService');
 
@@ -48,6 +51,8 @@ app.use('/groups', groupRoutes);
 app.use('/campaign', campaignRoutes)
 app.use('/contacts', contactRoutes);
 app.use('/appointments', appointmentRoutes);
+app.use('/companies', companyRoutes);
+app.use('/company-permissions', companyPermissionRoutes);
 app.use(errorMiddleware);
 
 const PORT = Number(process.env.PORT) || 5000;

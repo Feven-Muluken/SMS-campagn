@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { Campaign, CampaignRecipient, Contact, User, Group, Message, CampaignDispatch } = require('../models');
 const { sendSMS } = require('./smsService');
+const { personalizeMessage } = require('../utils/smsTemplate');
 
 const normalizeSenderId = (value) => {
   if (value === null || value === undefined) return null;
@@ -62,13 +63,51 @@ const resolveCampaignRecipients = async (campaign) => {
   return recipients;
 };
 
+/** Pending rows for future schedules so Delivery Status can show “pending” until send. */
+const seedPendingMessagesForCampaign = async (campaignId) => {
+  const campaign = await Campaign.findByPk(campaignId, {
+    include: [{ model: CampaignRecipient, as: 'recipientLinks', attributes: ['recipientId', 'recipientType'] }],
+  });
+  if (!campaign?.schedule) return;
+  if (new Date(campaign.schedule) <= new Date()) return;
+
+  const recipients = await resolveCampaignRecipients(campaign);
+  for (const r of recipients) {
+    const phoneNumber = r.phoneNumber;
+    if (!phoneNumber) continue;
+    const recipientType = r.constructor.name === 'Contact' ? 'Contact' : 'User';
+    const already = await Message.findOne({
+      where: {
+        campaignId: campaign.id,
+        recipientId: r.id,
+        recipientType,
+        status: 'pending',
+      },
+    });
+    if (already) continue;
+    const content = personalizeMessage(campaign.message, {
+      contact: recipientType === 'Contact' ? r : undefined,
+      user: recipientType === 'User' ? r : undefined,
+    });
+    await Message.create({
+      campaignId: campaign.id,
+      groupId: campaign.groupId || null,
+      recipientType,
+      recipientId: r.id,
+      phoneNumber,
+      content,
+      status: 'pending',
+    });
+  }
+};
+
 const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
   const recipients = await resolveCampaignRecipients(campaign);
   if (!recipients.length) {
     return { successCount: 0, failCount: 0, total: 0, message: 'No recipients found' };
   }
 
-  const content = campaign.message;
+  const template = campaign.message;
   let successCount = 0;
   let failCount = 0;
 
@@ -81,29 +120,64 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
       continue;
     }
 
-    try {
-      const response = await sendSMS(phoneNumber, content, { senderId });
-      await Message.create({
+    const content = personalizeMessage(template, {
+      contact: recipientType === 'Contact' ? recipient : undefined,
+      user: recipientType === 'User' ? recipient : undefined,
+    });
+
+    const existing = await Message.findOne({
+      where: {
         campaignId: campaign.id,
-        recipientType,
         recipientId: recipient.id,
-        phoneNumber,
-        content,
-        status: 'sent',
-        response,
-        sentAt: new Date(),
-      });
+        recipientType,
+        status: 'pending',
+      },
+    });
+
+    try {
+      const { response, providerMessageId } = await sendSMS(phoneNumber, content, { senderId });
+      if (existing) {
+        await existing.update({
+          content,
+          status: 'sent',
+          response: { direction: 'outbound', providerResponse: response },
+          providerMessageId,
+          sentAt: new Date(),
+        });
+      } else {
+        await Message.create({
+          campaignId: campaign.id,
+          groupId: campaign.groupId || null,
+          recipientType,
+          recipientId: recipient.id,
+          phoneNumber,
+          content,
+          status: 'sent',
+          response: { direction: 'outbound', providerResponse: response },
+          providerMessageId,
+          sentAt: new Date(),
+        });
+      }
       successCount += 1;
     } catch (err) {
-      await Message.create({
-        campaignId: campaign.id,
-        recipientType,
-        recipientId: recipient.id,
-        phoneNumber,
-        content,
-        status: 'failed',
-        response: { error: err?.message || String(err) },
-      });
+      if (existing) {
+        await existing.update({
+          content,
+          status: 'failed',
+          response: { direction: 'outbound', error: err?.message || String(err) },
+        });
+      } else {
+        await Message.create({
+          campaignId: campaign.id,
+          groupId: campaign.groupId || null,
+          recipientType,
+          recipientId: recipient.id,
+          phoneNumber,
+          content,
+          status: 'failed',
+          response: { direction: 'outbound', error: err?.message || String(err) },
+        });
+      }
       failCount += 1;
     }
   }
@@ -164,6 +238,7 @@ const processDueCampaignsOnce = async () => {
         const next = addInterval(scheduledFor, campaign.recurringInterval);
         if (next) {
           await campaign.update({ schedule: next, status: 'pending' });
+          await seedPendingMessagesForCampaign(campaign.id);
         } else {
           await campaign.update({ status: 'sent' });
         }
@@ -204,4 +279,6 @@ const startCampaignScheduler = () => {
 module.exports = {
   startCampaignScheduler,
   processDueCampaignsOnce,
+  resolveCampaignRecipients,
+  seedPendingMessagesForCampaign,
 };

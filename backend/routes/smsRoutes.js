@@ -4,22 +4,32 @@ const {
   sendCampaignMessages,
   sendGroupSMS,
   sendContactsSMS,
-  previewGeoAudience,
-  sendGeoSMS,
-  getDeliveryStatus,
-  receiveInboundSMS,
+  getDeliveryStatus
+  reportLiveLocation,
+  verifyLiveLocationIngestKey,
 } = require('../controllers/smsController');
 const { authMiddleware, checkRole } = require('../middleware/authMiddleware');
-
-// Provider webhook: inbound replies from customers.
-router.post('/inbound', receiveInboundSMS);
+const { loadCompanyContext } = require('../middleware/companyContextMiddleware');
+const {
+  requireCompanyApprovedForMessaging,
+  requireCompanyPermissions,
+} = require('../middleware/companyPermissionMiddleware');
 
 router.post('/send', authMiddleware, checkRole(['admin', 'staff', 'viewer']), sendCampaignMessages);
 router.post('/send-group', authMiddleware, checkRole(['admin', 'staff']), sendGroupSMS);
 router.post('/send-contacts', authMiddleware, checkRole(['admin', 'staff']), sendContactsSMS);
-router.post('/geo/preview', authMiddleware, checkRole(['admin', 'staff']), previewGeoAudience);
-router.post('/geo/send', authMiddleware, checkRole(['admin', 'staff']), sendGeoSMS);
-router.get('/status', authMiddleware, checkRole(['admin', 'staff', 'viewer']), getDeliveryStatus);
+router.post('/send-phone', authMiddleware, checkRole(['admin', 'staff']), sendToPhone);
+router.post('/send-tags', authMiddleware, checkRole(['admin', 'staff']), sendTagsSMS);
+// Mobile app: POST with X-Live-Location-Key header (must match LIVE_LOCATION_INGEST_KEY).
+router.post('/live-location/ping', verifyLiveLocationIngestKey, reportLiveLocation);
+router.get(
+  '/status',
+  authMiddleware,
+  loadCompanyContext,
+  requireCompanyPermissions('delivery.view'),
+  checkRole(['admin', 'staff', 'viewer']),
+  getDeliveryStatus
+);
 
 // router.get('/campaign/:name/stats', authMiddleware, checkRole(['admin', 'staff']), stats);
 

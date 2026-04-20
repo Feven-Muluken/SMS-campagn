@@ -11,8 +11,17 @@ const UserMessages = () => {
   useEffect(() => {
     const fetchMessages = async () => {
       try {
-        const res = await axios.get('/messages');
-        setMessages(res.data || []);
+        const res = await axios.get('/sms/status', {
+          params: {
+            page: 1,
+            pageSize: 500,
+            status: 'all',
+            sortBy: 'created_at',
+            sortDir: 'DESC',
+          },
+        });
+        const list = Array.isArray(res.data?.data) ? res.data.data : [];
+        setMessages(list);
       } catch (error) {
         console.error('Failed to load messages:', error);
         toast.error('Failed to load messages');
@@ -93,7 +102,14 @@ const UserMessages = () => {
                       <FiMessageCircle className="w-5 h-5" style={{ color: '#DF0A0A' }} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">SMS Message</h3>
+                      <h3 className="font-semibold text-gray-900">
+                        {message.group?.name
+                          ? `${message.group.name}${message.memberName ? ` · ${message.memberName}` : ''}`
+                          : (message.recipientDisplayName || 'SMS Message')}
+                      </h3>
+                      {(message.group?.name || message.recipientDisplayName) && message.phoneNumber && (
+                        <p className="text-xs text-gray-500 mt-0.5">{message.phoneNumber}</p>
+                      )}
                       <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
                         <FiClock className="w-4 h-4" />
                         {message.sentAt
@@ -120,6 +136,11 @@ const UserMessages = () => {
                   {message.campaign && (
                     <p className="text-sm text-gray-500 mt-2">
                       From campaign: {message.campaign?.name || 'Unknown'}
+                    </p>
+                  )}
+                  {message.group?.name && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Group: {message.group.name}
                     </p>
                   )}
                 </div>

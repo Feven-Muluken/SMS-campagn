@@ -1,5 +1,6 @@
-const { Campaign, CampaignRecipient, CampaignDispatch, Group, Contact, User, sequelize } = require('../models');
+const { Campaign, CampaignRecipient, CampaignDispatch, Group, Contact, User, Message, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const { seedPendingMessagesForCampaign } = require('../services/campaignSchedulerService');
 
 const normalizeIds = (ids) => Array.isArray(ids) ? ids.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [];
 
@@ -33,10 +34,19 @@ const createCampaign = async (req, res) => {
 
     let groupRecord = null;
     if (group) {
-      groupRecord = await Group.findByPk(group);
+      groupRecord = await Group.findByPk(group, {
+        include: [{ model: Contact, as: 'members', through: { attributes: [] }, attributes: ['id'] }],
+      });
       if (!groupRecord) return res.status(404).json({ message: 'Group not found' });
       if (req.user?.role !== 'admin' && groupRecord.ownerId !== req.user?.id) {
         return res.status(403).json({ message: 'Group does not belong to you' });
+      }
+      const memberCount = groupRecord.members?.length || 0;
+      if (memberCount === 0 && recipientIds.length === 0) {
+        return res.status(400).json({
+          message:
+            'This group has no members. Add contacts to the group or add individual recipients before creating the campaign.',
+        });
       }
     }
 
@@ -88,6 +98,10 @@ const createCampaign = async (req, res) => {
         ],
       });
 
+      if (schedule && new Date(schedule) > new Date()) {
+        await seedPendingMessagesForCampaign(campaign.id);
+      }
+
       res.status(201).json(created);
     } catch (error) {
       await tx.rollback();
@@ -103,7 +117,7 @@ const createCampaign = async (req, res) => {
 const getAllCampaigns = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 100);
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 500);
     const search = (req.query.search || '').trim();
     const status = (req.query.status || '').trim();
     const sortBy = ['name', 'status', 'created_at', 'createdAt', 'schedule'].includes(req.query.sortBy)
@@ -127,11 +141,18 @@ const getAllCampaigns = async (req, res) => {
         : {}),
     };
 
+    // Use separate queries for hasMany associations so we avoid giant JOINs
+    // (one row per recipient × campaign), which stalls MySQL and the Node event loop.
     const { rows, count } = await Campaign.findAndCountAll({
       where,
       order: [[sortBy, sortDir]],
       include: [
-        { model: CampaignRecipient, as: 'recipientLinks', attributes: ['id', 'recipientId', 'recipientType'] },
+        {
+          model: CampaignRecipient,
+          as: 'recipientLinks',
+          attributes: ['id', 'recipientId', 'recipientType'],
+          separate: true,
+        },
         { model: Group, as: 'group', attributes: ['id', 'name'] },
         {
           model: CampaignDispatch,
@@ -174,7 +195,13 @@ const updateCampaign = async (req, res) => {
     if (name) updates.name = name;
     if (message) updates.message = message;
     if (type) updates.type = type;
-    if (schedule !== undefined) updates.schedule = schedule || null;
+    if (schedule !== undefined) {
+      updates.schedule = schedule || null;
+      // Scheduler only picks pending + schedule <= now; allow re-scheduling completed/failed runs.
+      if (schedule && ['sent', 'failed'].includes(campaign.status)) {
+        updates.status = 'pending';
+      }
+    }
     if (status) updates.status = status;
     if (recurring) {
       updates.recurringActive = !!recurring?.active;
@@ -226,7 +253,34 @@ const updateCampaign = async (req, res) => {
         }
       }
 
+      const reloadedForValidation = await Campaign.findByPk(campaign.id, {
+        include: [{ model: CampaignRecipient, as: 'recipientLinks', attributes: ['id'] }],
+        transaction: tx,
+      });
+      if (reloadedForValidation.groupId) {
+        const g = await Group.findByPk(reloadedForValidation.groupId, {
+          include: [{ model: Contact, as: 'members', through: { attributes: [] }, attributes: ['id'] }],
+          transaction: tx,
+        });
+        const linkCount = reloadedForValidation.recipientLinks?.length || 0;
+        if (!(g?.members?.length) && linkCount === 0) {
+          await tx.rollback();
+          return res.status(400).json({
+            message:
+              'This group has no members and the campaign has no direct recipients. Add group members or recipients.',
+          });
+        }
+      }
+
       await tx.commit();
+
+      const afterUpdate = await Campaign.findByPk(campaign.id, {
+        include: [{ model: CampaignRecipient, as: 'recipientLinks', attributes: ['recipientId', 'recipientType'] }],
+      });
+      await Message.destroy({ where: { campaignId: campaign.id, status: 'pending' } });
+      if (afterUpdate?.schedule && new Date(afterUpdate.schedule) > new Date()) {
+        await seedPendingMessagesForCampaign(campaign.id);
+      }
 
       const updated = await Campaign.findByPk(campaign.id, {
         include: [

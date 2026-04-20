@@ -13,11 +13,17 @@ const AddContact = () => {
   const navigate = useNavigate();
   const contactId = params.get('id');
 
+  const toArray = (maybe) => {
+    if (Array.isArray(maybe)) return maybe;
+    if (Array.isArray(maybe?.data)) return maybe.data;
+    return [];
+  };
+
   useEffect(() => {
     const fetchGroups = async () => {
       try {
-        const res = await axios.get('/groups');
-        setGroups(res.data || []);
+        const res = await axios.get('/groups', { params: { pageSize: 500 } });
+        setGroups(toArray(res.data));
       } catch (error) {
         console.error('Error fetching groups:', error);
         toast.error('Failed to load groups');
@@ -63,8 +69,12 @@ const AddContact = () => {
         await axios.put(`/contacts/${contactId}`, payload);
         toast.success('Contact updated successfully');
       } else {
-        await axios.post('/contacts', payload);
-        toast.success('Contact created successfully');
+        const res = await axios.post('/contacts', payload);
+        if (res.status === 200) {
+          toast.success('This number is already saved; using your existing contact.');
+        } else {
+          toast.success('Contact created successfully');
+        }
       }
       navigate('/contacts');
     } catch (error) {

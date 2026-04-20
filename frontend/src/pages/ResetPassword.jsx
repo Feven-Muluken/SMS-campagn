@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import axios from '../api/axiosInstance';
+import publicAuthClient from '../api/publicAuthClient';
 import { toast } from 'sonner';
 import BackButton from '../components/BackButton';
 
@@ -28,7 +28,7 @@ const ResetPassword = () => {
 
     setLoading(true);
     try {
-      const response = await axios.post('/auth/reset-password', {
+      const response = await publicAuthClient.post('/auth/reset-password', {
         token,
         newPassword,
       });

@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { FiArrowLeft } from 'react-icons/fi';
 
-const BackButton = ({ fallbackPath = '/admin', label = 'Back' }) => {
+const BackButton = ({ fallbackPath = '/', label = 'Back' }) => {
   const navigate = useNavigate();
 
   const goBack = () => {
