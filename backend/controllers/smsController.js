@@ -14,6 +14,7 @@ const { sendSMS } = require('../services/smsService');
 const { Op } = require('sequelize');
 const { personalizeMessage } = require('../utils/smsTemplate');
 const { pickInbound, pickDeliveryReport } = require('../utils/africastalkingWebhooks');
+const { getProvider } = require('../services/sms/smsRouter');
 const { normalizeToE164, isValidE164 } = require('../utils/phoneNormalize');
 
 const parseInboundDate = (value) => {
@@ -232,7 +233,7 @@ const groupSendBucketFromDate = (d) => {
 };
 
 const sendCampaignMessages = async (req, res) => {
-  const { campaignID, senderId, templateVars } = req.body;
+  const { campaignID, senderId, templateVars, provider } = req.body;
   try {
     if (!campaignID) {
       return res.status(400).json({ message: 'Campaign ID is required' });
@@ -321,13 +322,14 @@ const sendCampaignMessages = async (req, res) => {
       });
 
       try {
-        const { response, providerMessageId } = await sendSMS(phone, content, { senderId: normalizedSenderId });
+        const { response, providerMessageId, provider: usedProvider } = await sendSMS(phone, content, { senderId: normalizedSenderId, provider });
         if (existing) {
           await existing.update({
             content,
             status: 'sent',
             response: { direction: 'outbound', providerResponse: response },
             providerMessageId,
+            provider: usedProvider,
             sentAt: new Date(),
           });
         } else {
@@ -341,6 +343,7 @@ const sendCampaignMessages = async (req, res) => {
             status: 'sent',
             response: { direction: 'outbound', providerResponse: response },
             providerMessageId,
+            provider: usedProvider,
             sentAt: new Date(),
           });
         }
@@ -362,6 +365,7 @@ const sendCampaignMessages = async (req, res) => {
             content,
             status: 'failed',
             response: { direction: 'outbound', error: error.message || 'Unknown error' },
+            provider,
           });
         }
         failCount += 1;
@@ -386,7 +390,7 @@ const sendCampaignMessages = async (req, res) => {
 };
 
 const sendGroupSMS = async (req, res) => {
-  const { groupId, message, senderId, templateVars } = req.body;
+  const { groupId, message, senderId, templateVars, provider } = req.body;
   try {
     if (!groupId || !message) {
       return res.status(400).json({ message: 'Group ID and message are required' });
@@ -434,7 +438,7 @@ const sendGroupSMS = async (req, res) => {
       const content = personalizeMessage(message, { contact, templateVars });
 
       try {
-        const { response, providerMessageId } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId });
+        const { response, providerMessageId, provider: usedProvider } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId, provider });
 
         await Message.create({
           groupId: group.id,
@@ -445,6 +449,7 @@ const sendGroupSMS = async (req, res) => {
           status: 'sent',
           response: { direction: 'outbound', providerResponse: response },
           providerMessageId,
+          provider: usedProvider,
           sentAt: new Date(),
         });
         successCount++;
@@ -457,6 +462,7 @@ const sendGroupSMS = async (req, res) => {
           content,
           status: 'failed',
           response: { direction: 'outbound', error: error.message },
+          provider,
         });
         failCount++;
       }
@@ -480,7 +486,7 @@ const sendGroupSMS = async (req, res) => {
 };
 
 const sendContactsSMS = async (req, res) => {
-  const { contactIds, message, senderId, templateVars } = req.body;
+  const { contactIds, message, senderId, templateVars, provider } = req.body;
   try {
     if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
       return res.status(400).json({ message: 'Contact IDs array is required' });
@@ -525,7 +531,7 @@ const sendContactsSMS = async (req, res) => {
       const content = personalizeMessage(message, { contact, templateVars });
 
       try {
-        const { response, providerMessageId } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId });
+        const { response, providerMessageId, provider: usedProvider } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId, provider });
 
         await Message.create({
           recipientType: 'Contact',
@@ -535,6 +541,7 @@ const sendContactsSMS = async (req, res) => {
           status: 'sent',
           response: { direction: 'outbound', providerResponse: response },
           providerMessageId,
+          provider: usedProvider,
           sentAt: new Date()
         });
         successCount++;
@@ -547,6 +554,7 @@ const sendContactsSMS = async (req, res) => {
           content,
           status: 'failed',
           response: { direction: 'outbound', error: errorMessage },
+          provider,
         });
         failCount++;
       }
@@ -821,7 +829,7 @@ const sendGeoSMS = async (req, res) => {
       const contact = row.contact;
       const content = personalizeMessage(msgTemplate, { contact, templateVars });
       try {
-        const { response, providerMessageId } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId });
+        const { response, providerMessageId, provider: usedProvider } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId });
         await Message.create({
           recipientType: 'Contact',
           recipientId: contact.id != null ? contact.id : null,
@@ -841,6 +849,7 @@ const sendGeoSMS = async (req, res) => {
             },
           },
           providerMessageId,
+          provider: usedProvider,
           sentAt: new Date(),
         });
         successCount += 1;
@@ -863,6 +872,7 @@ const sendGeoSMS = async (req, res) => {
               source: row.source || 'live',
             },
           },
+          provider,
         });
         failCount += 1;
       }
@@ -1415,7 +1425,7 @@ const receiveInboundSMS = async (req, res) => {
       sentAt: parseInboundDate(inbound.date),
       response: {
         direction: 'inbound',
-        provider: 'africastalking',
+        provider: getProvider(),
         messageId: inbound.id,
         raw: inbound.raw,
       },
@@ -1464,7 +1474,8 @@ const receiveDeliveryReport = async (req, res) => {
   }
 };
 
-const sendToPhone = async (req, res) => {
+const sendToPhone = async (req, res) => {// eslint-disable-next-line no-unused-vars
+  const provider = req.body?.provider;
   try {
     const { phoneNumber, message, senderId } = req.body || {};
     if (!phoneNumber || !String(message || '').trim()) {
@@ -1483,7 +1494,7 @@ const sendToPhone = async (req, res) => {
       return res.status(senderCheck.status).json({ message: senderCheck.message });
     }
     const content = String(message).trim();
-    const { response, providerMessageId } = await sendSMS(normalizedPhone, content, { senderId: normalizedSenderId });
+    const { response, providerMessageId, provider: usedProvider } = await sendSMS(normalizedPhone, content, { senderId: normalizedSenderId, provider });
     const contact = await Contact.findOne({ where: { phoneNumber: normalizedPhone } });
     await Message.create({
       campaignId: null,
@@ -1494,6 +1505,7 @@ const sendToPhone = async (req, res) => {
       status: 'sent',
       response: { direction: 'outbound', providerResponse: response },
       providerMessageId,
+      provider: usedProvider,
       sentAt: new Date(),
     });
     res.json({ message: 'SMS sent', providerMessageId });
@@ -1505,7 +1517,7 @@ const sendToPhone = async (req, res) => {
 
 const sendTagsSMS = async (req, res) => {
   try {
-    const { tags, message, senderId, matchAll, templateVars } = req.body || {};
+    const { tags, message, senderId, matchAll, templateVars, provider } = req.body || {};
     if (!message || !String(message).trim()) {
       return res.status(400).json({ message: 'message is required' });
     }
@@ -1552,7 +1564,7 @@ const sendTagsSMS = async (req, res) => {
       }
       const content = personalizeMessage(template, { contact, templateVars });
       try {
-        const { response, providerMessageId } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId });
+        const { response, providerMessageId, provider: usedProvider } = await sendSMS(contact.phoneNumber, content, { senderId: normalizedSenderId, provider });
         await Message.create({
           recipientType: 'Contact',
           recipientId: contact.id,
@@ -1565,6 +1577,7 @@ const sendTagsSMS = async (req, res) => {
             tagBroadcast: { tags: sanitized, matchAll: !!matchAll },
           },
           providerMessageId,
+          provider: usedProvider,
           sentAt: new Date(),
         });
         successCount += 1;
@@ -1576,6 +1589,7 @@ const sendTagsSMS = async (req, res) => {
           content,
           status: 'failed',
           response: { direction: 'outbound', error: error.message },
+          provider,
         });
         failCount += 1;
       }

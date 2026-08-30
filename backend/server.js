@@ -41,8 +41,10 @@ const contactRoutes = require('./routes/contactRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const companyPermissionRoutes = require('./routes/companyPermissionRoutes');
+const senderIdRequestRoutes = require('./routes/senderIdRequestRoutes');
 const { startAppointmentScheduler } = require('./services/appointmentNotificationService');
 const { startCampaignScheduler } = require('./services/campaignSchedulerService');
+const { describeActiveProvider } = require('./services/smsService');
 
 app.use('/admin', adminRoutes);
 app.use('/auth', authRoutes);
@@ -53,6 +55,7 @@ app.use('/contacts', contactRoutes);
 app.use('/appointments', appointmentRoutes);
 app.use('/companies', companyRoutes);
 app.use('/company-permissions', companyPermissionRoutes);
+app.use('/sender-id-requests', senderIdRequestRoutes);
 app.use(errorMiddleware);
 
 const PORT = Number(process.env.PORT) || 5000;
@@ -63,7 +66,11 @@ const startServer = async () => {
     await syncDatabase();
     startAppointmentScheduler();
     startCampaignScheduler();
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    app.listen(PORT, () => {
+      const sms = describeActiveProvider();
+      console.log(`Server running on port ${PORT}`);
+      console.log(`SMS provider: ${sms.default} (${sms.routing}${sms.userSelectable ? ', user-selectable' : ''})`);
+    });
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

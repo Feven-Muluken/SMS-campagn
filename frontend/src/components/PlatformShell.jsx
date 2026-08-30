@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import PlatformLayout from '../layouts/PlatformLayout';
+import Home from '../pages/adminHome';
 
 /** Superadmin-only shell; other roles go to workspace (no scary unauthorized page). */
 const PlatformShell = () => {
@@ -14,7 +14,7 @@ const PlatformShell = () => {
   if (String(user.role || '').toLowerCase() !== 'admin') {
     return <Navigate to="/" replace />;
   }
-  return <PlatformLayout />;
+  return <Home />;
 };
 
 export default PlatformShell;

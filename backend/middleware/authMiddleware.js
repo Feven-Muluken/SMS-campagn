@@ -24,9 +24,15 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+const normalizeRole = (value) => {
+  const role = String(value || '').trim().toLowerCase();
+  if (role === 'super_admin') return 'admin';
+  return role;
+};
+
 const checkRole = (roles) => (req, res, next) => {
-  const allowed = (Array.isArray(roles) ? roles : [roles]).map((r) => String(r || '').toLowerCase());
-  const actual = String(req.user?.role || '').toLowerCase();
+  const allowed = (Array.isArray(roles) ? roles : [roles]).map((r) => normalizeRole(r));
+  const actual = normalizeRole(req.user?.role);
   if (!allowed.includes(actual)) {
     return res.status(403).json({ message: 'Access denied' });
   }

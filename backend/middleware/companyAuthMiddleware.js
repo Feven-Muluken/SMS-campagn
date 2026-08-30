@@ -30,7 +30,6 @@ const ROLE_PERMISSION_TEMPLATES = {
 		'contact.manage',
 		'group.view',
 		'group.manage',
-		'user.manage',
 		'sms.send',
 		'delivery.view',
 		'appointment.view',
@@ -39,7 +38,6 @@ const ROLE_PERMISSION_TEMPLATES = {
 		'inbox.reply',
 		'geo.send',
 		'billing.send',
-		'company.manage',
 	],
 	viewer: ['dashboard.view', 'campaign.view', 'contact.view', 'group.view', 'delivery.view', 'appointment.view', 'inbox.view'],
 };

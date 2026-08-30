@@ -23,6 +23,11 @@ Contact.init({
     allowNull: false,
     field: 'created_by_id',
   },
+  companyId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'company_id',
+  },
   /** JSON array of segment tags, e.g. ["vip","retail"] */
   tags: {
     type: DataTypes.JSON,

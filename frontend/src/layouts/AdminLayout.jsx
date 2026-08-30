@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { motion } from 'motion/react';
@@ -16,11 +16,12 @@ import {
   FiMessageCircle,
   FiBriefcase,
   FiShield,
-  FiGrid,
+  FiHome,
 } from 'react-icons/fi';
 
 const AdminLayout = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const navigate = useNavigate();
   const location = useLocation();
   // const { user, setUser, refreshUser } = useUser();
@@ -29,12 +30,17 @@ const AdminLayout = () => {
 
   const MotionAside = motion.aside;
 
+  const isPlatformAdmin = String(user?.role || '').toLowerCase() === 'admin';
+
   const menuItems = [
+    ...(isPlatformAdmin
+      ? []
+      : [{ id: 'overview', label: 'Overview', icon: FiHome, path: '/companyhome', permission: null }]),
     { id: 'dashboard', label: 'Dashboard', icon: FiBarChart2, path: '/', permission: 'dashboard.view' },
     { id: 'campaigns', label: 'Campaign', icon: FiSend, path: '/campaign', permission: 'campaign.view' },
     { id: 'contacts', label: 'Contact', icon: FiPhone, path: '/contacts', permission: 'contact.view' },
     { id: 'groups', label: 'Group', icon: FiUsers, path: '/groups', permission: 'group.view' },
-    { id: 'users', label: 'User', icon: FiUser, path: '/users', permission: 'user.manage' },
+    { id: 'users', label: 'User', icon: FiUser, path: '/users', permission: 'user.manage', platformOnly: true },
     { id: 'companies', label: 'Companies', icon: FiBriefcase, path: '/companies', permission: 'company.manage' },
     { id: 'company-access', label: 'Company access', icon: FiShield, path: '/company-access', permission: 'company.manage' },
     { id: 'send-sms', label: 'Send SMS', icon: FiMessageCircle, path: '/send-sms', permission: 'sms.send' },
@@ -43,12 +49,34 @@ const AdminLayout = () => {
     { id: 'inbox', label: 'Inbox Chat', icon: FiMessageCircle, path: '/premium/two-way-chat', permission: 'inbox.view' },
     { id: 'geo', label: 'Geo SMS', icon: FiSend, path: '/premium/geo-marketing', permission: 'geo.send' },
     { id: 'billing', label: 'Billing SMS', icon: FiPhone, path: '/premium/billing-alerts', permission: 'billing.send' },
+    { id: 'my-profile', label: 'My profile', icon: FiUser, path: '/profile', permission: null },
   ];
+  const effectiveCompanyRole = String(user?.companyRole || '').toLowerCase() === 'admin'
+    ? 'company_admin'
+    : (user?.companyRole || null);
+  const roleLabel = String(user?.role || '').toLowerCase() === 'admin'
+    ? 'super_admin'
+    : (effectiveCompanyRole || user?.role || 'viewer');
+  const activeCompany = (Array.isArray(user?.availableCompanies) ? user.availableCompanies : [])
+    .find((c) => Number(c.companyId) === Number(user?.activeCompanyId));
+  const companyLabel = activeCompany?.name || activeCompany?.slug || null;
+
   const menuItemsWithAccess = menuItems.map((item) => ({
     ...item,
-    allowed: canAccess(user, item.permission),
+    allowed: (!item.platformOnly || String(user?.role || '').toLowerCase() === 'admin') && canAccess(user, item.permission),
   }));
-  const visibleMenuItems = menuItemsWithAccess.filter((item) => item.allowed);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const nextIsDesktop = window.innerWidth >= 1024;
+      setIsDesktop(nextIsDesktop);
+      setSidebarOpen(nextIsDesktop);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleNavigation = (path) => {
     navigate(path);
@@ -104,7 +132,7 @@ const AdminLayout = () => {
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 to-white overflow-hidden">
       {/* Mobile Overlay */}
-      {sidebarOpen && (
+      {sidebarOpen && !isDesktop && (
         <div
           className="fixed inset-0 bg-opacity-40 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
@@ -118,7 +146,7 @@ const AdminLayout = () => {
           x: sidebarOpen ? 0 : '-100%'
         }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className={`fixed z-50 inset-y-0 left-0 w-64 bg-white shadow-xl lg:translate-x-0 lg:static lg:z-auto`}
+        className={`fixed z-50 inset-y-0 left-0 w-64 bg-white shadow-xl lg:translate-x-0 lg:static lg:z-auto h-screen flex flex-col overflow-hidden`}
         style={{
           background: 'linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%)'
         }}
@@ -128,7 +156,7 @@ const AdminLayout = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold" style={{ color: '#DF0A0A' }}>AFROEL</h1>
-              <p className="text-xs text-gray-500 mt-1">Admin Panel</p>
+              <p className="text-xs text-gray-500 mt-1">{isPlatformAdmin ? 'Platform admin' : 'Company workspace'}</p>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
@@ -151,26 +179,33 @@ const AdminLayout = () => {
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
-          {visibleMenuItems.map((item) => {
+        <nav className="p-4 space-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+          {menuItemsWithAccess.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
+            const disabled = !item.allowed;
             return (
               <button
                 key={item.id}
-                onClick={() => handleNavigation(item.path)}
+                onClick={() => {
+                  if (!disabled) handleNavigation(item.path);
+                }}
+                disabled={disabled}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${active
                   ? 'text-white shadow-lg'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  : disabled
+                    ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                    : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 style={
-                  active
+                  active && !disabled
                     ? {
                       backgroundColor: '#DF0A0A',
                       boxShadow: '0 4px 15px rgba(223, 10, 10, 0.3)'
                     }
                     : {}
                 }
+                title={disabled ? 'Permission required for this page' : item.label}
               >
                 <Icon className="w-5 h-5" />
                 <span>{item.label}</span>
@@ -178,22 +213,6 @@ const AdminLayout = () => {
             );
           })}
         </nav>
-
-        {String(user?.role || '').toLowerCase() === 'admin' && (
-          <div className="px-4 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                navigate('/platform');
-                if (window.innerWidth < 1024) setSidebarOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-slate-800 border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors"
-            >
-              <FiGrid className="w-5 h-5 text-slate-600" />
-              <span>Platform hub</span>
-            </button>
-          </div>
-        )}
 
         {/* Logout Button */}
         <div className="p-4 border-t border-gray-200 space-y-3">
@@ -246,22 +265,14 @@ const AdminLayout = () => {
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
-              {String(user?.role || '').toLowerCase() === 'admin' && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/platform')}
-                  className="hidden sm:inline-flex text-xs font-semibold text-red-700 border border-red-200 bg-red-50 px-3 py-2 rounded-lg hover:bg-red-100"
-                >
-                  Platform
-                </button>
-              )}
               <div className="flex items-center gap-3 p-3 px-4 sm:px-9 rounded-lg" style={{ backgroundColor: '#FEE2E2' }}>
                 <div className="p-2 rounded-full bg-white">
                   <FiUser className="w-5 h-5" style={{ color: '#DF0A0A' }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 truncate capitalize">{user?.name || 'Administrator'}</p>
-                  <p className="text-xs text-gray-600 capitalize">{user?.role || 'admin'}</p>
+                  <p className="text-xs text-gray-600 capitalize">{roleLabel}</p>
+                  {companyLabel && <p className="text-[10px] text-gray-500 truncate">{companyLabel}</p>}
                 </div>
               </div>
             </div>

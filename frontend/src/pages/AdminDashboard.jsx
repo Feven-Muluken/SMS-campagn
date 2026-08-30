@@ -1,16 +1,36 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from '../api/axiosInstance';
 import { motion } from 'motion/react';
 import { FiBarChart2, FiUsers, FiMessageCircle, FiSend, FiUser } from 'react-icons/fi';
 import { toast } from 'sonner';
+import { useUser } from '../context/UserContext';
+import { canAccess } from '../utils/permissions';
 
 const AdminDashboard = () => {
+  const { user } = useUser();
+  const isPlatformAdmin = String(user?.role || '').toLowerCase() === 'admin';
   const [stats, setStats] = useState(null);
   const [recentActivity, setRecentActivity] = useState(null);
+  const [companyContactTotal, setCompanyContactTotal] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!isPlatformAdmin) {
+        try {
+          if (canAccess(user, 'contact.view')) {
+            const res = await axios.get('/contacts', { params: { page: 1, pageSize: 1 } });
+            setCompanyContactTotal(typeof res.data?.total === 'number' ? res.data.total : null);
+          }
+        } catch (error) {
+          console.error('Failed to load company snapshot:', error);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         const [statsRes, activityRes] = await Promise.all([
           axios.get('/admin/stats'),
@@ -26,7 +46,7 @@ const AdminDashboard = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [isPlatformAdmin, user]);
 
   const StatCard = ({ label, value, icon: Icon, color = '#DF0A0A' }) => (
     <motion.div
@@ -52,6 +72,56 @@ const AdminDashboard = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const quickLinks = [
+    { to: '/campaign', label: 'Campaigns', permission: 'campaign.view' },
+    { to: '/send-sms', label: 'Send SMS', permission: 'sms.send' },
+    { to: '/contacts', label: 'Contacts', permission: 'contact.view' },
+    { to: '/groups', label: 'Groups', permission: 'group.view' },
+    { to: '/delivery-status', label: 'Delivery status', permission: 'delivery.view' },
+    { to: '/company-access', label: 'Company access', permission: 'company.manage' },
+    { to: '/profile', label: 'My profile', permission: null },
+  ].filter((l) => !l.permission || canAccess(user, l.permission));
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+        <div className="bg-white shadow-sm border-b border-gray-200 mb-8">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <h1 className="text-2xl font-bold text-gray-900">Company dashboard</h1>
+            <p className="text-sm text-gray-500 mt-1">Overview for your organization. Open a section from the sidebar or below.</p>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 pb-12">
+          {canAccess(user, 'contact.view') && companyContactTotal !== null && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              <StatCard label="Contacts (this company)" value={companyContactTotal} icon={FiUser} color="#DF0A0A" />
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick links</h2>
+            <div className="flex flex-wrap gap-3">
+              {quickLinks.map((l) => (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white shadow-sm"
+                  style={{ backgroundColor: '#DF0A0A' }}
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </div>
+            <p className="text-sm text-gray-500 mt-4">
+              Need the full menu? Use the sidebar. Company permissions control which items are enabled.
+            </p>
+          </div>
         </div>
       </div>
     );

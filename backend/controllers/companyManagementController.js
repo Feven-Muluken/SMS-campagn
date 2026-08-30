@@ -31,7 +31,6 @@ const ROLE_PERMISSION_TEMPLATES = {
     'contact.manage',
     'group.view',
     'group.manage',
-    'user.manage',
     'sms.send',
     'delivery.view',
     'appointment.view',
@@ -40,7 +39,6 @@ const ROLE_PERMISSION_TEMPLATES = {
     'inbox.reply',
     'geo.send',
     'billing.send',
-    'company.manage',
   ],
   viewer: ['dashboard.view', 'campaign.view', 'contact.view', 'group.view', 'delivery.view', 'appointment.view', 'inbox.view'],
 };
@@ -48,6 +46,18 @@ const ROLE_PERMISSION_TEMPLATES = {
 const sanitizePermissions = (permissions = []) => {
   if (!Array.isArray(permissions)) return [];
   return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(String(p)))));
+};
+
+const roleTemplateForMembershipRole = (membershipRole) => {
+  const normalized = String(membershipRole || 'viewer').toLowerCase();
+  if (normalized === 'admin') return ROLE_PERMISSION_TEMPLATES.admin;
+  if (normalized === 'staff') return ROLE_PERMISSION_TEMPLATES.staff;
+  return ROLE_PERMISSION_TEMPLATES.viewer;
+};
+
+const sanitizePermissionsForRole = (membershipRole, permissions = []) => {
+  const allowed = new Set(roleTemplateForMembershipRole(membershipRole));
+  return sanitizePermissions(permissions).filter((p) => allowed.has(p));
 };
 
 const normalizeCompanyUserRole = (value) => {
@@ -107,6 +117,48 @@ const canManageCompany = async (user, companyId) => {
   }
 
   return { ok: true, membership, company };
+};
+
+const canViewCompany = async (user, companyId) => {
+  const company = await Company.findByPk(companyId);
+  if (!company) return { ok: false, status: 404, message: 'Company not found' };
+  if (user?.role === 'admin') return { ok: true, company };
+
+  const membership = await CompanyUser.findOne({ where: { companyId, userId: user.id } });
+  if (!membership) return { ok: false, status: 403, message: 'Not a member of this company' };
+  return { ok: true, company, membership };
+};
+
+const getCompanySummary = async (req, res) => {
+  try {
+    const companyId = Number(req.params.id);
+    if (!companyId) return res.status(400).json({ message: 'Invalid company id' });
+
+    const access = await canViewCompany(req.user, companyId);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    // Load company including approved sender IDs so frontend can display them
+    const company = await Company.findByPk(companyId, {
+      include: [{ association: 'senderIds', attributes: ['id', 'senderId', 'status', 'isActive', 'approvedById', 'createdAt'] }],
+    });
+
+    // Count pending sender ID requests for UI badge
+    const { SenderIdRequest } = require('../models');
+    const pendingCount = await SenderIdRequest.count({ where: { companyId, status: 'pending' } });
+
+    return res.json({
+      data: {
+        id: company.id,
+        name: company.name,
+        slug: company.slug,
+        senderIds: (company.senderIds || []).map((s) => ({ id: s.id, senderId: s.senderId, status: s.status, isActive: !!s.isActive })),
+        pendingSenderIdRequests: pendingCount,
+      },
+    });
+  } catch (error) {
+    console.error('Get company summary error:', error);
+    return res.status(500).json({ message: 'Failed to fetch company summary' });
+  }
 };
 
 const getManageableCompanies = async (req, res) => {
@@ -253,7 +305,7 @@ const createCompanyUserManaged = async (req, res) => {
       companyId,
       userId: user.id,
       role: normalizedRole.membershipRole,
-      permissions: sanitizePermissions(permissions),
+      permissions: sanitizePermissionsForRole(normalizedRole.membershipRole, permissions),
     });
 
     const safeUser = user.toJSON();
@@ -302,14 +354,18 @@ const updateCompanyUserManaged = async (req, res) => {
       }
     }
 
+    let nextMembershipRole = membership.role;
     if (role !== undefined) {
       const normalized = normalizeCompanyUserRole(role);
       membership.role = normalized.membershipRole;
       user.role = normalized.platformRole;
+      nextMembershipRole = normalized.membershipRole;
     }
 
     if (permissions !== undefined) {
-      membership.permissions = sanitizePermissions(permissions);
+      membership.permissions = sanitizePermissionsForRole(nextMembershipRole, permissions);
+    } else if (role !== undefined) {
+      membership.permissions = sanitizePermissionsForRole(nextMembershipRole, membership.permissions);
     }
 
     if (name !== undefined) user.name = name;
@@ -344,6 +400,7 @@ const updateCompanyUserManaged = async (req, res) => {
 
 module.exports = {
   getManageableCompanies,
+  getCompanySummary,
   updateCompany,
   listCompanyUsers,
   createCompanyUserManaged,

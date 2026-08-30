@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { FiArrowLeft } from 'react-icons/fi';
+import { FiChevronLeft } from 'react-icons/fi';
 
 const BackButton = ({ fallbackPath = '/', label = 'Back' }) => {
   const navigate = useNavigate();
@@ -16,12 +16,12 @@ const BackButton = ({ fallbackPath = '/', label = 'Back' }) => {
     <button
       type="button"
       onClick={goBack}
-      className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-red-600"
-      aria-label={label}
-      title={label}
+      className="items-center bg-gray-200 border border-gray-200 rounded-full p-1 items-center gap-2 text-sm font-medium hover:bg-gray-300 focus:bg-gray-400 "
+      // aria-label={label}
+      // title={label}
     >
-      <FiArrowLeft className="w-4 h-4" />
-      <span>{label}</span>
+      <FiChevronLeft className="w-6 h-6" />
+      {/* <span>{label}</span> */}
     </button>
   );
 };

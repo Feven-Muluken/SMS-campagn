@@ -57,6 +57,12 @@ Message.init({
     allowNull: true,
     field: 'provider_message_id',
   },
+  provider: {
+    type: DataTypes.ENUM('africastalking', 'mobilesms_io'),
+    allowNull: true,
+    defaultValue: 'africastalking',
+    comment: 'SMS provider used to send this message',
+  },
   networkDeliveryStatus: {
     type: DataTypes.STRING(32),
     allowNull: true,

@@ -4,6 +4,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/authMiddleware');
 const {
   getManageableCompanies,
+  getCompanySummary,
   updateCompany,
   listCompanyUsers,
   createCompanyUserManaged,
@@ -11,6 +12,7 @@ const {
 } = require('../controllers/companyManagementController');
 
 router.get('/manageable', authMiddleware, getManageableCompanies);
+router.get('/:id/summary', authMiddleware, getCompanySummary);
 router.put('/:id', authMiddleware, updateCompany);
 router.get('/:id/users', authMiddleware, listCompanyUsers);
 router.post('/:id/users', authMiddleware, createCompanyUserManaged);

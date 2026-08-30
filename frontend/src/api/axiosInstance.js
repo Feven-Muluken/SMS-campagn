@@ -18,11 +18,22 @@ instance.interceptors.request.use(config => {
 instance.interceptors.response.use(
   response => response,
   error => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const requestUrl = String(error.config?.url || '');
+    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/forgot-password') || requestUrl.includes('/auth/reset-password');
+    const hasToken = Boolean(localStorage.getItem('token') || sessionStorage.getItem('token'));
+
+    if (status === 401 && hasToken && !isAuthEndpoint) {
       localStorage.removeItem('token');
       sessionStorage.removeItem('token');
       localStorage.removeItem('memberCompanies');
       sessionStorage.removeItem('memberCompanies');
+      localStorage.removeItem('activeCompanyId');
+      sessionStorage.removeItem('activeCompanyId');
+      localStorage.removeItem('companyPermissions');
+      sessionStorage.removeItem('companyPermissions');
+      localStorage.removeItem('companyRole');
+      sessionStorage.removeItem('companyRole');
       window.location.href = '/login';
     }
     return Promise.reject(error);

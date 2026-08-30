@@ -33,3 +33,32 @@ npm run dev
 ```
 
 After this, `POST /auth/forgot-password` sends the reset link to the target email.
+
+## SMS provider setup
+
+Outbound SMS is routed by `SMS_PROVIDER`.
+
+- `SMS_PROVIDER=africastalking` uses the Africa's Talking SDK.
+- `SMS_PROVIDER=mobilesms_io` uses the MobileSMS.io HTTP adapter.
+
+For MobileSMS.io, set at least:
+
+```env
+SMS_PROVIDER=mobilesms_io
+MOBILESMS_IO_BASE_URL=https://your-provider-host.example
+MOBILESMS_IO_API_KEY=your_api_key
+MOBILESMS_IO_SEND_PATH=/sms/send
+MOBILESMS_IO_REQUEST_FORMAT=json
+```
+
+Configure your provider dashboard to call:
+
+- `POST /sms/inbound`
+- `POST /sms/delivery-report`
+
+You can also use the aliases:
+
+- `POST /sms/webhooks/inbound`
+- `POST /sms/webhooks/delivery-report`
+
+If the provider uses a webhook secret, set `SMS_WEBHOOK_SECRET` and send it as `x-at-webhook-secret`, `x-webhook-secret`, `x-sms-webhook-secret`, or `?secret=`.

@@ -86,8 +86,10 @@ const SupportInbox = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/" />
-      <h1 className="text-2xl font-bold text-gray-900">{isTwoWay ? 'Two-Way SMS Chat' : 'SMS Ticketing & Support'}</h1>
+      <div className='inline-flex items-center gap-3 mb-2 text-sm text-gray-500'>
+        <BackButton fallbackPath="/" />
+        <h1 className="text-2xl font-bold text-gray-900">{isTwoWay ? 'Two-Way SMS Chat' : 'SMS Ticketing & Support'}</h1>
+      </div>
       <p className="text-sm text-gray-600 mt-1">
         Inbox from stored messages. Inbound SMS requires the Africa&apos;s Talking webhook pointing to your server{' '}
         <code className="text-xs bg-gray-100 px-1 rounded">POST /sms/inbound</code>. Reply works by contact or by phone number.

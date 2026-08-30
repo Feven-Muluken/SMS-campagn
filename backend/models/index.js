@@ -1,6 +1,7 @@
 const { sequelize } = require('../config/db');
 const User = require('./User');
 const Contact = require('./Contact');
+const ContactLocation = require('./ContactLocation');
 const Group = require('./Group');
 const GroupMember = require('./GroupMember');
 const Campaign = require('./Campaign');
@@ -12,12 +13,15 @@ const Company = require('./Company');
 const CompanyUser = require('./CompanyUser');
 const CompanyPermission = require('./CompanyPermission');
 const CompanySenderId = require('./CompanySenderId');
+const SenderIdRequest = require('./SenderIdRequest');
 const LiveLocationPing = require('./LiveLocationPing');
 const { ensureDbColumns } = require('../config/ensureDbColumns');
 
 // User relations
 User.hasMany(Contact, { foreignKey: 'created_by_id', as: 'contacts' });
 Contact.belongsTo(User, { foreignKey: 'created_by_id', as: 'creator' });
+Contact.hasOne(ContactLocation, { foreignKey: 'contact_id', as: 'location', onDelete: 'CASCADE', hooks: true });
+ContactLocation.belongsTo(Contact, { foreignKey: 'contact_id', as: 'contact' });
 
 User.hasMany(Group, { foreignKey: 'owner_id', as: 'ownedGroups' });
 Group.belongsTo(User, { foreignKey: 'owner_id', as: 'owner' });
@@ -91,6 +95,12 @@ CompanyPermission.belongsTo(Company, { foreignKey: 'company_id', as: 'company', 
 Company.hasMany(CompanySenderId, { foreignKey: 'company_id', as: 'senderIds', constraints: false });
 CompanySenderId.belongsTo(Company, { foreignKey: 'company_id', as: 'company', constraints: false });
 
+// Sender ID request relations (for admin review workflow)
+Company.hasMany(SenderIdRequest, { foreignKey: 'company_id', as: 'senderIdRequests', constraints: false });
+SenderIdRequest.belongsTo(Company, { foreignKey: 'company_id', as: 'company', constraints: false });
+SenderIdRequest.belongsTo(User, { foreignKey: 'requested_by_id', as: 'requester', constraints: false });
+SenderIdRequest.belongsTo(User, { foreignKey: 'reviewed_by_id', as: 'reviewer', constraints: false });
+
 const syncDatabase = async () => {
   await sequelize.sync({ alter: false });
   await ensureDbColumns();
@@ -100,6 +110,7 @@ module.exports = {
   sequelize,
   User,
   Contact,
+  ContactLocation,
   Group,
   GroupMember,
   Campaign,
@@ -111,6 +122,7 @@ module.exports = {
   CompanyUser,
   CompanyPermission,
   CompanySenderId,
+  SenderIdRequest,
   LiveLocationPing,
   syncDatabase,
 };

@@ -34,6 +34,7 @@ const parseLocationPayload = (location) => {
 
 const createContact = async (req, res) => {
   const { name, phoneNumber, groups, location, tags } = req.body;
+  const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
 
   if (!phoneNumber) {
     return res.status(400).json({ message: 'Phone number is required' });
@@ -48,8 +49,10 @@ const createContact = async (req, res) => {
   }
 
   try {
+    const existingWhere = { phoneNumber: normalizedPhone };
+    if (activeCompanyId) existingWhere.companyId = activeCompanyId;
     const existing = await Contact.findOne({
-      where: { phoneNumber: normalizedPhone },
+      where: existingWhere,
       include: contactInclude,
     });
     if (existing) {
@@ -74,6 +77,7 @@ const createContact = async (req, res) => {
         name: name || normalizedPhone,
         phoneNumber: normalizedPhone,
         createdById: req.user.id,
+        companyId: activeCompanyId,
         tags: tagList,
       }, { transaction: tx });
 
@@ -116,7 +120,7 @@ const createContact = async (req, res) => {
     console.error('Create contact error:', error);
     if (error?.name === 'SequelizeUniqueConstraintError') {
       const row = await Contact.findOne({
-        where: { phoneNumber: normalizedPhone },
+        where: existingWhere,
         include: contactInclude,
       });
       if (row) {
@@ -141,6 +145,7 @@ const createContact = async (req, res) => {
 
 const getAllContacts = async (req, res) => {
   try {
+    const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 500);
     const search = (req.query.search || '').trim();
@@ -151,7 +156,7 @@ const getAllContacts = async (req, res) => {
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
     const ilike = Op.iLike || Op.like;
 
-    const baseWhere = req.user?.role === 'admin' ? {} : { createdById: req.user.id };
+    const baseWhere = activeCompanyId ? { companyId: activeCompanyId } : (req.user?.role === 'admin' ? {} : { createdById: req.user.id });
     let where = search
       ? {
           ...baseWhere,
@@ -196,6 +201,7 @@ const getAllContacts = async (req, res) => {
 const updateContact = async (req, res) => {
   try {
     const { name, phoneNumber, groups, location, tags } = req.body;
+    const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
 
     const contact = await Contact.findByPk(req.params.id, {
       include: [
@@ -205,7 +211,10 @@ const updateContact = async (req, res) => {
     });
     if (!contact) return res.status(404).json({ message: 'Contact not found' });
 
-    if (req.user.role !== 'admin' && contact.createdById !== req.user.id) {
+    if (activeCompanyId && Number(contact.companyId || 0) !== activeCompanyId) {
+      return res.status(403).json({ message: 'You do not have permission to update this contact' });
+    }
+    if (!activeCompanyId && req.user.role !== 'admin' && contact.createdById !== req.user.id) {
       return res.status(403).json({ message: 'You do not have permission to update this contact' });
     }
 
@@ -302,10 +311,14 @@ const updateContact = async (req, res) => {
 
 const deleteContact = async (req, res) => {
   try {
+    const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
     const contact = await Contact.findByPk(req.params.id);
     if (!contact) return res.status(404).json({ message: 'Contact not found' });
 
-    if (req.user.role !== 'admin' && contact.createdById !== req.user.id) {
+    if (activeCompanyId && Number(contact.companyId || 0) !== activeCompanyId) {
+      return res.status(403).json({ message: 'You do not have permission to delete this contact' });
+    }
+    if (!activeCompanyId && req.user.role !== 'admin' && contact.createdById !== req.user.id) {
       return res.status(403).json({ message: 'You do not have permission to delete this contact' });
     }
 

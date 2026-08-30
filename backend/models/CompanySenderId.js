@@ -20,6 +20,12 @@ CompanySenderId.init(
 			allowNull: false,
 			field: 'sender_id',
 		},
+		countryCodes: {
+			type: DataTypes.JSON,
+			allowNull: false,
+			defaultValue: [],
+			field: 'country_codes',
+		},
 		status: {
 			type: DataTypes.ENUM('pending', 'approved', 'rejected'),
 			allowNull: false,

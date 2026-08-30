@@ -53,6 +53,8 @@ const toSafeUser = (user) => {
   return plain;
 };
 
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+
 const buildCompanyContext = async ({ userId, preferredCompanyId = null }) => {
   const memberships = await CompanyUser.findAll({
     where: { userId },
@@ -153,10 +155,45 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
   try {
-    const { email, password, rememberMe = false } = req.body || {};
+    const { rememberMe = false } = req.body || {};
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message: 'Email and password are required.',
+        code: 'VALIDATION_ERROR',
+        errors: {
+          email: !email ? 'Email is required.' : null,
+          password: !password ? 'Password is required.' : null,
+        },
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        message: 'Please provide a valid email address.',
+        code: 'INVALID_EMAIL_FORMAT',
+        errors: {
+          email: 'Invalid email format.',
+        },
+      });
+    }
+
     const user = await User.findOne({ where: { email } });
-    if (!user || !(await user.matchPassword(password))) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+    if (!user) {
+      return res.status(401).json({
+        message: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
+    }
+
+    const isPasswordValid = await user.matchPassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        message: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
     }
 
     const companyContext = await buildCompanyContext({ userId: user.id });
@@ -171,7 +208,11 @@ const login = async (req, res, next) => {
       companies: companyContext.companies,
     });
   } catch (error) {
-    next(error);
+    console.error('login error:', error);
+    return res.status(500).json({
+      message: 'Login failed due to a server error. Please try again.',
+      code: 'LOGIN_SERVER_ERROR',
+    });
   }
 };
 

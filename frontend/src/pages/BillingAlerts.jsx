@@ -101,8 +101,10 @@ const BillingAlerts = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white px-6 py-8">
-      <BackButton fallbackPath="/" />
-      <h1 className="text-2xl font-bold text-gray-900">SMS Invoices & Billing Alerts</h1>
+      <div className='inline-flex items-center gap-3 mb-2 text-sm text-gray-500'>
+        <BackButton fallbackPath="/" />
+        <h1 className="text-2xl font-bold text-gray-900">SMS Invoices & Billing Alerts</h1>
+      </div>
       <p className="text-sm text-gray-600 mt-1">
         Manual sends from templates (not connected to accounting). Each contact sees their own name via{' '}
         <code className="text-xs bg-gray-100 px-1 rounded">{'{{name}}'}</code> plus invoice fields.

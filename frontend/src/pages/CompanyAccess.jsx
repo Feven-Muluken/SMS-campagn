@@ -12,6 +12,19 @@ import {
 
 const uiRole = (membershipRole) => (membershipRole === 'admin' ? 'company_admin' : membershipRole);
 
+const rolePermissionOptions = {
+  viewer: [...companyRoleTemplates.viewer],
+  staff: Array.from(new Set([...(companyRoleTemplates.viewer || []), ...(companyRoleTemplates.staff || [])])),
+  company_admin: [...COMPANY_PERMISSION_KEYS],
+};
+
+const allowedPermissionsForRole = (role) => rolePermissionOptions[role] || rolePermissionOptions.viewer;
+
+const normalizePermissionsByRole = (role, permissions = []) => {
+  const allowed = new Set(allowedPermissionsForRole(role));
+  return Array.from(new Set((Array.isArray(permissions) ? permissions : []).filter((p) => allowed.has(p))));
+};
+
 const CompanyAccess = () => {
   const { hasPermission } = useUser();
   const canManage = hasPermission('company.manage');
@@ -138,16 +151,18 @@ const CompanyAccess = () => {
   };
 
   const startEdit = (row) => {
+    const role = uiRole(row.role);
+    const currentPermissions = Array.isArray(row.permissions) && row.permissions.length
+      ? [...row.permissions]
+      : [...(companyRoleTemplates[role] || companyRoleTemplates.viewer)];
     setEditingId(String(row.id));
     setEditForm({
       name: row.user?.name || '',
       email: row.user?.email || '',
       phoneNumber: row.user?.phoneNumber || '',
       password: '',
-      role: uiRole(row.role),
-      permissions: Array.isArray(row.permissions) && row.permissions.length
-        ? [...row.permissions]
-        : [...(companyRoleTemplates[uiRole(row.role)] || companyRoleTemplates.viewer)],
+      role,
+      permissions: normalizePermissionsByRole(role, currentPermissions),
     });
   };
 
@@ -208,8 +223,8 @@ const CompanyAccess = () => {
   };
 
   const onNewRole = (role) => {
-    const t = companyRoleTemplates[role] || companyRoleTemplates.viewer;
-    setNewUser((p) => ({ ...p, role, permissions: [...t] }));
+    const t = allowedPermissionsForRole(role);
+    setNewUser((p) => ({ ...p, role, permissions: normalizePermissionsByRole(role, t) }));
   };
 
   if (!canManage) {
@@ -322,8 +337,12 @@ const CompanyAccess = () => {
                               value={editForm.role}
                               onChange={(e) => {
                                 const role = e.target.value;
-                                const t = companyRoleTemplates[role] || companyRoleTemplates.viewer;
-                                setEditForm((p) => ({ ...p, role, permissions: [...t] }));
+                                const t = allowedPermissionsForRole(role);
+                                setEditForm((p) => ({
+                                  ...p,
+                                  role,
+                                  permissions: normalizePermissionsByRole(role, p.permissions?.length ? p.permissions : t),
+                                }));
                               }}
                               className="border rounded px-2 py-1.5 text-sm"
                             >
@@ -333,7 +352,7 @@ const CompanyAccess = () => {
                             </select>
                           </div>
                           <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                            {COMPANY_PERMISSION_KEYS.map((key) => {
+                            {allowedPermissionsForRole(editForm.role).map((key) => {
                               const on = editForm.permissions.includes(key);
                               return (
                                 <button
@@ -351,7 +370,7 @@ const CompanyAccess = () => {
                                     on ? 'bg-green-50 border-green-200' : 'border-gray-200'
                                   }`}
                                 >
-                                  {key}
+                                  {labelPermission(key)}
                                 </button>
                               );
                             })}
@@ -450,7 +469,7 @@ const CompanyAccess = () => {
                   {creating ? '…' : 'Create'}
                 </button>
                 <div className="md:col-span-3 flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                  {COMPANY_PERMISSION_KEYS.map((key) => {
+                  {allowedPermissionsForRole(newUser.role).map((key) => {
                     const on = newUser.permissions.includes(key);
                     return (
                       <button
@@ -468,7 +487,7 @@ const CompanyAccess = () => {
                           on ? 'bg-green-50 border-green-200' : 'border-gray-200'
                         }`}
                       >
-                        {key}
+                        {labelPermission(key)}
                       </button>
                     );
                   })}

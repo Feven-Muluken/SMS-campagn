@@ -13,13 +13,20 @@ const SendSMS = () => {
     contactIds: [],
     segmentTags: '',
     matchAllSegment: false,
-    senderId: ''
+    senderId: '',
+    provider: 'africastalking' // 'africastalking' or 'mobilesms_io'
   });
   const [campaigns, setCampaigns] = useState([]);
   const [groups, setGroups] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [charCount, setCharCount] = useState(0);
+  
+  // SMS cost per part for each provider (fetched or static)
+  const providerCosts = {
+    africastalking: 0.05,
+    mobilesms_io: 0.07
+  };
 
   const toArray = (maybeArrayOrEnvelope) => {
     if (Array.isArray(maybeArrayOrEnvelope)) return maybeArrayOrEnvelope;
@@ -79,7 +86,7 @@ const SendSMS = () => {
           setLoading(false);
           return;
         }
-        payload = { campaignID: form.campaignID, senderId: form.senderId || undefined };
+        payload = { campaignID: form.campaignID, senderId: form.senderId || undefined, provider: form.provider };
         response = await axios.post('/sms/send', payload);
       } else if (form.sendType === 'group') {
         if (!form.groupId) {
@@ -95,7 +102,8 @@ const SendSMS = () => {
         payload = {
           groupId: form.groupId,
           message: form.message,
-          senderId: form.senderId || undefined
+          senderId: form.senderId || undefined,
+          provider: form.provider
         };
         response = await axios.post('/sms/send-group', payload);
       } else if (form.sendType === 'contact') {
@@ -112,7 +120,8 @@ const SendSMS = () => {
         payload = {
           contactIds: form.contactIds,
           message: form.message,
-          senderId: form.senderId || undefined
+          senderId: form.senderId || undefined,
+          provider: form.provider
         };
         response = await axios.post('/sms/send-contacts', payload);
       } else if (form.sendType === 'tags') {
@@ -135,6 +144,7 @@ const SendSMS = () => {
           message: form.message,
           matchAll: form.matchAllSegment,
           senderId: form.senderId || undefined,
+          provider: form.provider,
         });
       }
 
@@ -155,7 +165,8 @@ const SendSMS = () => {
         contactIds: [],
         segmentTags: '',
         matchAllSegment: false,
-        senderId: ''
+        senderId: '',
+        provider: 'africastalking'
       });
     } catch (error) {
       console.error('Error sending SMS:', error);
@@ -171,7 +182,10 @@ const SendSMS = () => {
   };
 
   const getMessageParts = () => Math.ceil(charCount / 160) || 1;
-  const getEstimatedCost = () => (getMessageParts() * 0.07).toFixed(2);
+  const getEstimatedCost = () => {
+    const costPerPart = providerCosts[form.provider] || 0.07;
+    return (getMessageParts() * costPerPart).toFixed(2);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
@@ -212,6 +226,40 @@ const SendSMS = () => {
               />
               <p className="text-xs text-gray-500 mt-1">
                 Must be approved in Afroel&apos;s Management. Use 1-11 letters/numbers.
+              </p>
+            </div>
+
+            {/* SMS Provider Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                SMS Provider
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, provider: 'africastalking' })}
+                  className={`px-4 py-3 rounded-lg font-medium transition-all ${
+                    form.provider === 'africastalking'
+                      ? 'bg-blue-100 border-2 border-blue-500 text-blue-900'
+                      : 'bg-gray-100 border-2 border-gray-300 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  Africa&apos;s Talking (${providerCosts.africastalking})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, provider: 'mobilesms_io' })}
+                  className={`px-4 py-3 rounded-lg font-medium transition-all ${
+                    form.provider === 'mobilesms_io'
+                      ? 'bg-blue-100 border-2 border-blue-500 text-blue-900'
+                      : 'bg-gray-100 border-2 border-gray-300 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  MobileSMS.io (${providerCosts.mobilesms_io})
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Select the SMS provider to use for sending messages. Costs shown per SMS part (160 characters = 1 part).
               </p>
             </div>
 
@@ -411,7 +459,7 @@ const SendSMS = () => {
                     Message Content *
                   </label>
                   <div className="text-sm text-gray-500">
-                    {charCount}/160 chars • {getMessageParts()} SMS • ${getEstimatedCost()}
+                    {charCount}/160 chars • {getMessageParts()} SMS • ${getEstimatedCost()} ({form.provider === 'africastalking' ? 'Africa\'s Talking' : 'MobileSMS.io'})
                   </div>
                 </div>
                 <textarea

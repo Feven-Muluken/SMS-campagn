@@ -259,7 +259,7 @@ const DeliveryStatus = () => {
 
   const handleExport = () => {
     if (!messages.length) return toast.error('No messages to export');
-    const headers = ['type', 'group', 'recipientName', 'phoneNumber', 'status', 'networkDelivery', 'content', 'campaign', 'counts', 'sentAt'];
+    const headers = ['type', 'group', 'recipientName', 'phoneNumber', 'status', 'smsProvider', 'networkDelivery', 'content', 'campaign', 'counts', 'sentAt'];
     const rows = messages.map((m) => {
       if (m.listKind === 'campaign') {
         const counts = `recipients=${m.recipientCount ?? 0}; sent=${m.sentCount ?? 0}; failed=${m.failedCount ?? 0}; pending=${m.pendingCount ?? 0}`;
@@ -269,6 +269,7 @@ const DeliveryStatus = () => {
           '',
           '',
           m.status || '',
+          m.provider ? (m.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '',
           '',
           (m.content || m.campaign?.message || '').replace(/\n/g, ' '),
           m.campaign?.name || '',
@@ -284,6 +285,7 @@ const DeliveryStatus = () => {
           '',
           '',
           m.status || '',
+          m.provider ? (m.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '',
           '',
           (m.content || '').replace(/\n/g, ' '),
           '',
@@ -297,6 +299,7 @@ const DeliveryStatus = () => {
         m.memberName || m.recipientDisplayName || m.recipient || '',
         m.phoneNumber || '',
         m.status || '',
+        m.provider ? (m.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '',
         m.networkDeliveryStatus || '',
         (m.content || m.message || '').replace(/\n/g, ' '),
         m.campaign?.name || '',
@@ -388,21 +391,22 @@ const DeliveryStatus = () => {
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:flex-1 md:gap-4">
-            <div className="relative w-full md:w-64">
+        <div className="rounded-2xl border border-gray-200 bg-white/95 p-4 shadow-sm shadow-gray-100 backdrop-blur sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_auto] lg:items-end">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.85fr)]">
+            <div className="relative w-full">
               <input
                 type="search"
                 value={searchInput}
                 onChange={(e) => { setSearchInput(e.target.value); setPage(1); }}
                 placeholder="Search recipient or message"
-                className="w-full rounded-lg border border-gray-200 py-2.5 pl-3 pr-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 shadow-sm transition focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
               />
             </div>
             <select
               value={API_STATUS_FILTERS.includes(filter) ? filter : 'all'}
               onChange={(e) => { setFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-gray-200 py-2.5 px-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm transition focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
             >
               <option value="all">All statuses (sent, failed, pending)</option>
               <option value="sent">Sent</option>
@@ -412,7 +416,7 @@ const DeliveryStatus = () => {
             <select
               value={deliveryFilter}
               onChange={(e) => { setDeliveryFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-gray-200 py-2.5 px-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm transition focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
             >
               <option value="">Any network status</option>
               <option value="Success">Network: Success</option>
@@ -423,33 +427,34 @@ const DeliveryStatus = () => {
             </select>
             <div className="flex gap-2 items-center">
               <div className="flex flex-col text-sm text-gray-700">
-                <label className="mb-1">From</label>
+                <label className="mb-1 font-medium text-gray-600">From</label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-                  className="rounded-lg border border-gray-200 py-2 px-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm transition focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                 />
               </div>
               <div className="flex flex-col text-sm text-gray-700">
-                <label className="mb-1">To</label>
+                <label className="mb-1 font-medium text-gray-600">To</label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-                  className="rounded-lg border border-gray-200 py-2 px-3 text-sm focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm transition focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                 />
               </div>
             </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-sm text-gray-600">
-            <span>Page {page} of {totalPages} • {total} items</span>
-            <div className="flex gap-2">
+          <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+            <span className="font-medium text-gray-700">Page {page} of {totalPages} • {total} items</span>
+            <div className="flex gap-2 sm:justify-end">
               <button
                 type="button"
                 onClick={() => setPage(Math.max(1, page - 1))}
                 disabled={page <= 1}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FiChevronLeft className="w-4 h-4" /> Prev
               </button>
@@ -457,7 +462,7 @@ const DeliveryStatus = () => {
                 type="button"
                 onClick={() => setPage(Math.min(totalPages, page + 1))}
                 disabled={page >= totalPages}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next <FiChevronRight className="w-4 h-4" />
               </button>
@@ -521,6 +526,11 @@ const DeliveryStatus = () => {
                           {message.status || 'pending'}
                         </span>
                       </span>
+                      {message.provider ? (
+                        <span className="block max-w-[10rem] text-xs leading-tight text-blue-600 font-medium sm:max-w-none">
+                          {message.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io'}
+                        </span>
+                      ) : null}
                       {message.networkDeliveryStatus ? (
                         <span className="block max-w-[10rem] text-xs leading-tight text-gray-500 sm:max-w-none">
                           Network: {message.networkDeliveryStatus}
@@ -537,6 +547,16 @@ const DeliveryStatus = () => {
                   </p>
                   {message.listKind === 'campaign' && message.campaign?.type ? (
                     <p className="text-sm text-gray-500">Campaign type: {message.campaign.type}</p>
+                  ) : null}
+                  {message.listKind === 'campaign' && message.provider ? (
+                    <p className="text-sm text-blue-600 font-medium">
+                      Provider: {message.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io'}
+                    </p>
+                  ) : null}
+                  {message.listKind === 'group_send' && message.provider ? (
+                    <p className="text-sm text-blue-600 font-medium">
+                      Provider: {message.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io'}
+                    </p>
                   ) : null}
                   {message.listKind !== 'campaign' && message.listKind !== 'group_send' && message.campaign ? (
                     <p className="text-sm text-gray-500">Campaign: {message.campaign?.name || 'Unknown'}</p>
@@ -580,6 +600,7 @@ const DeliveryStatus = () => {
                 <div><strong>Audience group:</strong> {selectedDetail.audienceGroup.name}</div>
               )}
               <div><strong>Campaign record status:</strong> {selectedDetail.campaign?.status || '—'}</div>
+              <div><strong>SMS Provider:</strong> {selectedDetail.provider ? (selectedDetail.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '—'}</div>
               <div><strong>Rollup (recipients):</strong> {selectedDetail.status}</div>
               <div>
                 <strong>Counts:</strong> {selectedDetail.recipientCount ?? 0} total · {selectedDetail.sentCount ?? 0} sent ·{' '}
@@ -610,6 +631,7 @@ const DeliveryStatus = () => {
           {selectedDetail && selectedDetail.listKind === 'group_send' && (
             <div className="space-y-3 text-sm">
               <div><strong>Group:</strong> {selectedDetail.group?.name || '—'}</div>
+              <div><strong>SMS Provider:</strong> {selectedDetail.provider ? (selectedDetail.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '—'}</div>
               <div><strong>Rollup (recipients):</strong> {selectedDetail.status}</div>
               <div>
                 <strong>Counts:</strong> {selectedDetail.recipientCount ?? 0} total · {selectedDetail.sentCount ?? 0} sent ·{' '}
@@ -695,6 +717,7 @@ const DeliveryStatus = () => {
                 );
               })()}
               <div><strong>API status:</strong> {selectedDetail.status}</div>
+              <div><strong>SMS Provider:</strong> {selectedDetail.provider ? (selectedDetail.provider === 'africastalking' ? "Africa's Talking" : 'MobileSMS.io') : '—'}</div>
               <div><strong>Network status:</strong> {selectedDetail.networkDeliveryStatus || '— (configure /sms/delivery-report webhook)'}</div>
               <div><strong>Provider message id:</strong> {selectedDetail.providerMessageId || '—'}</div>
               <div><strong>Content:</strong> {selectedDetail.content || selectedDetail.message}</div>
