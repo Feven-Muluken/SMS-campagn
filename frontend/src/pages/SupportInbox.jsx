@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from '../api/axiosInstance';
 import { toast } from 'sonner';
 import { useLocation } from 'react-router-dom';
@@ -8,19 +8,21 @@ const SupportInbox = () => {
   const location = useLocation();
   const isTwoWay = location.pathname.includes('/two-way-chat');
   const [contacts, setContacts] = useState([]);
+  const [threads, setThreads] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [selectedPhone, setSelectedPhone] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [newContactId, setNewContactId] = useState('');
   const [reply, setReply] = useState('');
   const [loading, setLoading] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [contactsRes, messagesRes] = await Promise.all([
-        axios.get('/contacts', { params: { pageSize: 300 } }),
-        axios.get('/sms/status', { params: { pageSize: 300 } }),
+      const [contactsRes, conversationsRes] = await Promise.all([
+        axios.get('/sms/inbox/contacts'),
+        axios.get('/sms/inbox/conversations'),
       ]);
       setContacts(Array.isArray(contactsRes.data?.data) ? contactsRes.data.data : []);
-      setMessages(Array.isArray(messagesRes.data?.data) ? messagesRes.data.data : []);
+      setThreads(Array.isArray(conversationsRes.data?.data) ? conversationsRes.data.data : []);
     } catch {
       toast.error('Failed to load inbox data');
     }
@@ -30,29 +32,38 @@ const SupportInbox = () => {
     fetchData();
   }, []);
 
-  const threads = useMemo(() => {
-    const byPhone = new Map();
-    messages.forEach((msg) => {
-      const key = msg.phoneNumber || 'unknown';
-      if (!byPhone.has(key)) byPhone.set(key, []);
-      byPhone.get(key).push(msg);
-    });
-    return Array.from(byPhone.entries())
-      .map(([phone, items]) => {
-        const sorted = [...items].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        const last = sorted[sorted.length - 1];
-        const contact = contacts.find((c) => c.phoneNumber === phone);
-        return { phone, items: sorted, last, contact };
-      })
-      .sort((a, b) => new Date(b.last?.createdAt || 0) - new Date(a.last?.createdAt || 0));
-  }, [messages, contacts]);
-
   const isInbound = (msg) => msg?.response?.direction === 'inbound';
 
-  const selectedThread = threads.find((item) => item.phone === selectedPhone) || null;
+  const selectedThread = threads.find((item) => String(item.id) === String(selectedId)) || null;
+
+  const selectThread = async (thread) => {
+    setSelectedId(thread.id);
+    try {
+      const response = await axios.get(`/sms/inbox/conversations/${thread.id}/messages`);
+      setMessages(Array.isArray(response.data?.data) ? response.data.data : []);
+      await axios.post(`/sms/inbox/conversations/${thread.id}/read`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to load conversation');
+    }
+  };
+
+  const startConversation = async () => {
+    if (!newContactId) return;
+    setLoading(true);
+    try {
+      const response = await axios.post('/sms/inbox/conversations', { contactId: newContactId });
+      await fetchData();
+      await selectThread(response.data.data);
+      setNewContactId('');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to start conversation');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const sendReply = async () => {
-    if (!selectedThread?.phone) {
+    if (!selectedThread?.id) {
       toast.error('No conversation selected');
       return;
     }
@@ -63,20 +74,12 @@ const SupportInbox = () => {
 
     setLoading(true);
     try {
-      if (selectedThread.contact?.id) {
-        await axios.post('/sms/send-contacts', {
-          contactIds: [selectedThread.contact.id],
-          message: reply.trim(),
-        });
-      } else {
-        await axios.post('/sms/send-phone', {
-          phoneNumber: selectedThread.phone,
-          message: reply.trim(),
-        });
-      }
+      await axios.post(`/sms/inbox/conversations/${selectedThread.id}/reply`, {
+        message: reply.trim(),
+      });
       toast.success('Reply sent');
       setReply('');
-      fetchData();
+      await selectThread(selectedThread);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to send reply');
     } finally {
@@ -98,17 +101,26 @@ const SupportInbox = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <div className="lg:col-span-1 bg-white border border-gray-200 rounded-xl p-4 max-h-[640px] overflow-auto">
           <h2 className="font-semibold text-gray-900 mb-3">Conversations</h2>
+          <div className="flex gap-2 mb-3">
+            <select className="min-w-0 flex-1 border rounded-lg p-2 text-sm" value={newContactId}
+              onChange={(event) => setNewContactId(event.target.value)}>
+              <option value="">Select contact...</option>
+              {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}
+            </select>
+            <button disabled={!newContactId || loading} onClick={startConversation}
+              className="px-3 rounded-lg text-white disabled:opacity-50" style={{ backgroundColor: '#DF0A0A' }}>Chat</button>
+          </div>
           <div className="space-y-2">
             {threads.map((thread) => (
               <button
-                key={thread.phone}
-                onClick={() => setSelectedPhone(thread.phone)}
-                className={`w-full text-left rounded-lg border p-3 ${selectedPhone === thread.phone ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                key={thread.id}
+                onClick={() => selectThread(thread)}
+                className={`w-full text-left rounded-lg border p-3 ${String(selectedId) === String(thread.id) ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}
               >
                 <p className="font-medium text-gray-900">
-                  {thread.contact?.name || thread.last?.recipientDisplayName || thread.phone}
+                  {thread.contact?.name || thread.customerPhone}
                 </p>
-                <p className="text-xs text-gray-600 truncate">{thread.last?.content || 'No messages'}</p>
+                <p className="text-xs text-gray-600 truncate">{thread.lastMessage?.content || 'No messages'}</p>
               </button>
             ))}
             {!threads.length && <p className="text-sm text-gray-500">No conversations yet.</p>}
@@ -122,13 +134,13 @@ const SupportInbox = () => {
             <>
               <div className="pb-3 border-b border-gray-200">
                 <p className="font-semibold text-gray-900">
-                  {selectedThread.contact?.name || selectedThread.last?.recipientDisplayName || 'Unknown contact'}
+                  {selectedThread.contact?.name || 'Unknown contact'}
                 </p>
-                <p className="text-sm text-gray-600">{selectedThread.phone}</p>
+                <p className="text-sm text-gray-600">{selectedThread.customerPhone}</p>
               </div>
 
               <div className="flex-1 overflow-auto space-y-3 py-4 max-h-[440px]">
-                {selectedThread.items.map((msg) => (
+                {messages.map((msg) => (
                   <div
                     key={msg.id}
                     className={`rounded-lg p-3 border ${isInbound(msg)

@@ -41,8 +41,13 @@ Campaign.init({
     allowNull: true,
     field: 'recurring_interval',
   },
+  recurrenceEndAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'recurrence_end_at',
+  },
   status: {
-    type: DataTypes.ENUM('pending', 'sent', 'failed'),
+    type: DataTypes.ENUM('pending', 'sent', 'partial', 'failed', 'paused', 'cancelled'),
     allowNull: false,
     defaultValue: 'pending',
   },
@@ -55,6 +60,11 @@ Campaign.init({
     type: DataTypes.INTEGER.UNSIGNED,
     allowNull: false,
     field: 'created_by_id',
+  },
+  companyId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'company_id',
   },
 }, {
   sequelize,

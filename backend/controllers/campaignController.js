@@ -1,8 +1,69 @@
-const { Campaign, CampaignRecipient, CampaignDispatch, Group, Contact, User, Message, sequelize } = require('../models');
+const { Campaign, CampaignRecipient, CampaignDispatch, Group, Contact, User, Message, CompanyUser, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { seedPendingMessagesForCampaign } = require('../services/campaignSchedulerService');
 
-const normalizeIds = (ids) => Array.isArray(ids) ? ids.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [];
+const normalizeIds = (ids) => Array.isArray(ids)
+  ? [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
+  : [];
+
+const canAccessCampaign = (req, campaign) => {
+  const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+  if (activeCompanyId && campaign.companyId) {
+    return Number(campaign.companyId) === activeCompanyId;
+  }
+  return req.user?.role === 'admin' || campaign.createdById === req.user?.id;
+};
+
+const canAccessGroup = async (req, group) => {
+  const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+  if (activeCompanyId && group.companyId) {
+    return Number(group.companyId) === activeCompanyId;
+  }
+  if (!activeCompanyId) {
+    return req.user?.role === 'admin' || group.ownerId === req.user?.id;
+  }
+  return false;
+};
+
+const recipientsBelongToCompany = async ({ recipientType, recipientIds, companyId }) => {
+  if (!recipientIds.length) return true;
+  if (recipientType === 'Contact') {
+    const count = await Contact.count({
+      where: {
+        id: { [Op.in]: recipientIds },
+        ...(companyId ? { companyId } : {}),
+      },
+    });
+    return count === recipientIds.length;
+  }
+  if (companyId) {
+    const count = await CompanyUser.count({
+      where: { companyId, userId: { [Op.in]: recipientIds } },
+    });
+    return count === recipientIds.length;
+  }
+  return User.count({ where: { id: { [Op.in]: recipientIds } } })
+    .then((count) => count === recipientIds.length);
+};
+
+const parseCampaignTiming = ({ schedule, recurring = {} }) => {
+  const scheduledAt = schedule ? new Date(schedule) : null;
+  if (schedule && Number.isNaN(scheduledAt.getTime())) return { error: 'schedule must be a valid datetime' };
+  const recurringActive = recurring?.active === true;
+  const interval = recurringActive ? String(recurring?.interval || '') : '';
+  if (recurringActive && !scheduledAt) return { error: 'Recurring campaigns require a schedule' };
+  if (recurringActive && !['daily', 'weekly', 'monthly'].includes(interval)) {
+    return { error: 'Recurring interval must be daily, weekly, or monthly' };
+  }
+  const recurrenceEndAt = recurring?.endAt ? new Date(recurring.endAt) : null;
+  if (recurring?.endAt && Number.isNaN(recurrenceEndAt.getTime())) {
+    return { error: 'Recurrence end must be a valid datetime' };
+  }
+  if (recurrenceEndAt && scheduledAt && recurrenceEndAt < scheduledAt) {
+    return { error: 'Recurrence end must be after the first scheduled send' };
+  }
+  return { scheduledAt, recurringActive, interval: interval || null, recurrenceEndAt };
+};
 
 const createCampaign = async (req, res) => {
   try {
@@ -31,6 +92,18 @@ const createCampaign = async (req, res) => {
     }
 
     const recipientIds = normalizeIds(recipients);
+    const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+    const timing = parseCampaignTiming({ schedule, recurring });
+    if (timing.error) return res.status(400).json({ message: timing.error });
+    if (timing.scheduledAt && timing.scheduledAt <= new Date()) {
+      return res.status(400).json({ message: 'schedule must be in the future' });
+    }
+    const canScheduleCampaign = (req.companyContext?.permissions || []).includes('campaign.schedule');
+    if ((schedule || recurring?.active === true) && !canScheduleCampaign && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Campaign scheduling permission is required to schedule or repeat a campaign',
+      });
+    }
 
     let groupRecord = null;
     if (group) {
@@ -38,7 +111,7 @@ const createCampaign = async (req, res) => {
         include: [{ model: Contact, as: 'members', through: { attributes: [] }, attributes: ['id'] }],
       });
       if (!groupRecord) return res.status(404).json({ message: 'Group not found' });
-      if (req.user?.role !== 'admin' && groupRecord.ownerId !== req.user?.id) {
+      if (!(await canAccessGroup(req, groupRecord))) {
         return res.status(403).json({ message: 'Group does not belong to you' });
       }
       const memberCount = groupRecord.members?.length || 0;
@@ -50,14 +123,8 @@ const createCampaign = async (req, res) => {
       }
     }
 
-    if (recipientIds.length > 0) {
-      if (recipientType === 'Contact') {
-        const found = await Contact.findAll({ where: { id: recipientIds }, attributes: ['id'] });
-        if (found.length !== recipientIds.length) return res.status(400).json({ message: 'One or more recipients not found (Contact)' });
-      } else {
-        const foundUsers = await User.findAll({ where: { id: recipientIds }, attributes: ['id'] });
-        if (foundUsers.length !== recipientIds.length) return res.status(400).json({ message: 'One or more recipients not found (User)' });
-      }
+    if (!(await recipientsBelongToCompany({ recipientType, recipientIds, companyId: activeCompanyId }))) {
+      return res.status(400).json({ message: 'One or more recipients do not belong to this company' });
     }
 
     const tx = await sequelize.transaction();
@@ -68,9 +135,11 @@ const createCampaign = async (req, res) => {
         type,
         recipientType,
         groupId: groupRecord ? groupRecord.id : null,
-        schedule: schedule || null,
-        recurringActive: !!recurring?.active,
-        recurringInterval: recurring?.interval || null,
+        schedule: timing.scheduledAt,
+        recurringActive: timing.recurringActive,
+        recurringInterval: timing.interval,
+        recurrenceEndAt: timing.recurrenceEndAt,
+        companyId: activeCompanyId,
         createdById: req.user?.id,
         status: 'pending',
       }, { transaction: tx });
@@ -92,7 +161,7 @@ const createCampaign = async (req, res) => {
             model: CampaignDispatch,
             as: 'dispatches',
             separate: true,
-            limit: 1,
+            limit: 10,
             order: [['scheduledFor', 'DESC']],
           },
         ],
@@ -119,17 +188,42 @@ const getAllCampaigns = async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 10, 1), 500);
     const search = (req.query.search || '').trim();
-    const status = (req.query.status || '').trim();
+    const status = (req.query.status || '').trim().toLowerCase();
     const sortBy = ['name', 'status', 'created_at', 'createdAt', 'schedule'].includes(req.query.sortBy)
       ? req.query.sortBy
       : 'created_at';
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
     const ilike = Op.iLike || Op.like;
 
-    const ownerFilter = req.user?.role === 'admin' ? {} : { createdById: req.user?.id };
+    const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+    let ownerFilter;
+    if (activeCompanyId) {
+      const memberships = await CompanyUser.findAll({
+        where: { companyId: activeCompanyId },
+        attributes: ['userId'],
+        raw: true,
+      });
+      const companyUserIds = memberships.map((membership) => membership.userId);
+      ownerFilter = {
+        [Op.or]: [
+          { companyId: activeCompanyId },
+          ...(companyUserIds.length
+            ? [{ companyId: null, createdById: { [Op.in]: companyUserIds } }]
+            : []),
+        ],
+      };
+    } else {
+      ownerFilter = req.user?.role === 'admin' ? {} : { createdById: req.user?.id };
+    }
     const where = {
       ...ownerFilter,
-      ...(status ? { status } : {}),
+      ...(status === 'scheduled'
+        ? { status: 'pending', recurringActive: false, schedule: { [Op.gt]: new Date() } }
+        : status === 'recurring'
+          ? { recurringActive: true, status: { [Op.in]: ['pending', 'paused'] } }
+          : status && status !== 'all'
+            ? { status: status === 'sent' ? { [Op.in]: ['sent', 'partial'] } : status }
+            : {}),
       ...(search
         ? {
             [Op.or]: [
@@ -154,11 +248,12 @@ const getAllCampaigns = async (req, res) => {
           separate: true,
         },
         { model: Group, as: 'group', attributes: ['id', 'name'] },
+        { model: User, as: 'creator', attributes: ['id', 'name'] },
         {
           model: CampaignDispatch,
           as: 'dispatches',
           separate: true,
-          limit: 1,
+          limit: 10,
           order: [['scheduledFor', 'DESC']],
         },
       ],
@@ -166,8 +261,51 @@ const getAllCampaigns = async (req, res) => {
       offset: (page - 1) * pageSize,
     });
 
+    const campaignIds = rows.map((campaign) => campaign.id);
+    const deliveryCountsByCampaign = new Map();
+    if (campaignIds.length) {
+      const deliveryRows = await Message.findAll({
+        where: { campaignId: { [Op.in]: campaignIds } },
+        attributes: [
+          'campaignId',
+          'status',
+          'networkDeliveryStatus',
+          [sequelize.fn('COUNT', sequelize.col('Message.id')), 'count'],
+        ],
+        group: ['campaignId', 'status', 'networkDeliveryStatus'],
+        raw: true,
+      });
+      for (const delivery of deliveryRows) {
+        const campaignId = delivery.campaignId ?? delivery.campaign_id;
+        const counts = deliveryCountsByCampaign.get(campaignId) || {
+          queued: 0,
+          sent: 0,
+          delivered: 0,
+          failed: 0,
+        };
+        const amount = Number(delivery.count) || 0;
+        if (delivery.status === 'pending') counts.queued += amount;
+        if (delivery.status === 'sent') counts.sent += amount;
+        if (delivery.status === 'failed') counts.failed += amount;
+        if (/delivered|success/i.test(String(delivery.networkDeliveryStatus || ''))) {
+          counts.delivered += amount;
+        }
+        deliveryCountsByCampaign.set(campaignId, counts);
+      }
+    }
+
+    const data = rows.map((campaign) => ({
+      ...campaign.toJSON(),
+      deliveryCounts: deliveryCountsByCampaign.get(campaign.id) || {
+        queued: 0,
+        sent: 0,
+        delivered: 0,
+        failed: 0,
+      },
+    }));
+
     res.json({
-      data: rows,
+      data,
       page,
       pageSize,
       total: count,
@@ -185,17 +323,31 @@ const updateCampaign = async (req, res) => {
     const campaign = await Campaign.findByPk(id, { include: [{ model: CampaignRecipient, as: 'recipientLinks' }] });
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
-    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+    if (!canAccessCampaign(req, campaign)) {
       return res.status(403).json({ message: 'You do not have permission to update this campaign' });
     }
 
     const { name, message, type, recipients, group, schedule, recurring, recipientType, status } = req.body;
+
+    const changesSendingPlan = schedule !== undefined || recurring !== undefined || status !== undefined;
+    const canScheduleCampaign = (req.companyContext?.permissions || []).includes('campaign.schedule');
+    if (changesSendingPlan && !canScheduleCampaign && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Campaign scheduling permission is required to change scheduling or recurring status',
+      });
+    }
 
     const updates = {};
     if (name) updates.name = name;
     if (message) updates.message = message;
     if (type) updates.type = type;
     if (schedule !== undefined) {
+      const nextSchedule = schedule ? new Date(schedule) : null;
+      const scheduleChanged = nextSchedule &&
+        (!campaign.schedule || Math.abs(nextSchedule.getTime() - new Date(campaign.schedule).getTime()) > 1000);
+      if (scheduleChanged && nextSchedule <= new Date()) {
+        return res.status(400).json({ message: 'schedule must be in the future' });
+      }
       updates.schedule = schedule || null;
       // Scheduler only picks pending + schedule <= now; allow re-scheduling completed/failed runs.
       if (schedule && ['sent', 'failed'].includes(campaign.status)) {
@@ -203,9 +355,15 @@ const updateCampaign = async (req, res) => {
       }
     }
     if (status) updates.status = status;
-    if (recurring) {
-      updates.recurringActive = !!recurring?.active;
-      updates.recurringInterval = recurring?.interval || null;
+    if (recurring !== undefined) {
+      const timing = parseCampaignTiming({
+        schedule: schedule !== undefined ? schedule : campaign.schedule,
+        recurring,
+      });
+      if (timing.error) return res.status(400).json({ message: timing.error });
+      updates.recurringActive = timing.recurringActive;
+      updates.recurringInterval = timing.interval;
+      updates.recurrenceEndAt = timing.recurrenceEndAt;
     }
     if (recipientType) updates.recipientType = recipientType;
 
@@ -217,6 +375,10 @@ const updateCampaign = async (req, res) => {
           if (!groupRecord) {
             await tx.rollback();
             return res.status(404).json({ message: 'Group not found' });
+          }
+          if (!(await canAccessGroup(req, groupRecord))) {
+            await tx.rollback();
+            return res.status(403).json({ message: 'Group does not belong to this company' });
           }
           updates.groupId = groupRecord.id;
         } else {
@@ -235,9 +397,13 @@ const updateCampaign = async (req, res) => {
         if (updates.recipientType || campaign.recipientType) {
           const typeToUse = updates.recipientType || campaign.recipientType;
           if (recipientIds.length > 0) {
-            const model = typeToUse === 'Contact' ? Contact : User;
-            const found = await model.findAll({ where: { id: recipientIds }, attributes: ['id'] });
-            if (found.length !== recipientIds.length) {
+            const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+            const validRecipients = await recipientsBelongToCompany({
+              recipientType: typeToUse,
+              recipientIds,
+              companyId: activeCompanyId,
+            });
+            if (!validRecipients) {
               await tx.rollback();
               return res.status(400).json({ message: 'One or more recipients not found for provided recipientType' });
             }
@@ -278,6 +444,13 @@ const updateCampaign = async (req, res) => {
         include: [{ model: CampaignRecipient, as: 'recipientLinks', attributes: ['recipientId', 'recipientType'] }],
       });
       await Message.destroy({ where: { campaignId: campaign.id, status: 'pending' } });
+      await CampaignDispatch.destroy({
+        where: {
+          campaignId: campaign.id,
+          status: 'pending',
+          dispatchedAt: null,
+        },
+      });
       if (afterUpdate?.schedule && new Date(afterUpdate.schedule) > new Date()) {
         await seedPendingMessagesForCampaign(campaign.id);
       }
@@ -290,7 +463,7 @@ const updateCampaign = async (req, res) => {
             model: CampaignDispatch,
             as: 'dispatches',
             separate: true,
-            limit: 1,
+            limit: 10,
             order: [['scheduledFor', 'DESC']],
           },
         ],
@@ -313,7 +486,7 @@ const deleteCampaign = async (req, res) => {
     const campaign = await Campaign.findByPk(id);
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
-    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+    if (!canAccessCampaign(req, campaign)) {
       return res.status(403).json({ message: 'You do not have permission to delete this campaign' });
     }
 
@@ -322,6 +495,47 @@ const deleteCampaign = async (req, res) => {
   } catch (error) {
     console.error('Failed to delete campaign:', error);
     res.status(500).json({ message: 'Failed to delete campaign' });
+  }
+};
+
+const changeCampaignStatus = async (req, res) => {
+  try {
+    const campaign = await Campaign.findByPk(req.params.id);
+    if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
+    if (!canAccessCampaign(req, campaign)) {
+      return res.status(403).json({ message: 'You do not have permission to update this campaign' });
+    }
+
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const nextStatus = { pause: 'paused', resume: 'pending', cancel: 'cancelled' }[action];
+    if (!nextStatus) {
+      return res.status(400).json({ message: 'action must be pause, resume, or cancel' });
+    }
+    if (['sent', 'partial', 'failed', 'cancelled'].includes(campaign.status)) {
+      return res.status(409).json({ message: 'Completed campaigns cannot be changed' });
+    }
+    if (action === 'pause' && (!campaign.recurringActive || campaign.status !== 'pending')) {
+      return res.status(409).json({ message: 'Only active recurring campaigns can be paused' });
+    }
+    if (action === 'resume' && campaign.status !== 'paused') {
+      return res.status(409).json({ message: 'Only paused campaigns can be resumed' });
+    }
+
+    await campaign.update({ status: nextStatus });
+    if (nextStatus === 'cancelled') {
+      await Message.destroy({ where: { campaignId: campaign.id, status: 'pending' } });
+      await CampaignDispatch.destroy({
+        where: {
+          campaignId: campaign.id,
+          status: 'pending',
+          dispatchedAt: null,
+        },
+      });
+    }
+    return res.json({ message: `Campaign ${nextStatus}`, campaign });
+  } catch (error) {
+    console.error('Change campaign status error:', error);
+    return res.status(500).json({ message: 'Failed to change campaign status' });
   }
 };
 
@@ -345,7 +559,7 @@ const getCampaignById = async (req, res) => {
 
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
-    if (req.user?.role !== 'admin' && campaign.createdById !== req.user?.id) {
+    if (!canAccessCampaign(req, campaign)) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -372,4 +586,4 @@ const getCampaignById = async (req, res) => {
 };
 
 
-module.exports = { createCampaign, getAllCampaigns, getCampaignById, updateCampaign, deleteCampaign };
+module.exports = { createCampaign, getAllCampaigns, getCampaignById, updateCampaign, deleteCampaign, changeCampaignStatus };

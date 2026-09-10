@@ -54,6 +54,11 @@ Appointment.init(
       allowNull: false,
       field: 'created_by_id',
     },
+    companyId: {
+      type: DataTypes.INTEGER.UNSIGNED,
+      allowNull: true,
+      field: 'company_id',
+    },
     reminderMinutesBefore: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -96,6 +101,7 @@ Appointment.init(
     tableName: 'appointments',
     timestamps: true,
     underscored: true,
+    indexes: [{ fields: ['company_id', 'scheduled_at'], name: 'appointments_company_schedule_idx' }],
   }
 );
 

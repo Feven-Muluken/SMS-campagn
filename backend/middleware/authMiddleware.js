@@ -12,6 +12,9 @@ const authMiddleware = async (req, res, next) => {
   });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.tokenType === 'refresh') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
     req.auth = decoded;
     const user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
     if (!user) {

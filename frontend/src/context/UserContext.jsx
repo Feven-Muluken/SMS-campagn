@@ -42,7 +42,7 @@ export const UserProvider = ({ children }) => {
     try {
       const decoded = jwtDecode(token);
       const now = Date.now() / 1000;
-      if (decoded.exp < now) {
+      if (decoded.exp < now && !tokenStorage.getItem('refreshToken')) {
         localStorage.removeItem('token');
         sessionStorage.removeItem('token');
         setUser(null);

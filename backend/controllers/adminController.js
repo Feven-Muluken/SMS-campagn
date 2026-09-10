@@ -1,13 +1,21 @@
 const { Op } = require('sequelize');
 const { User, Campaign, Message, Contact, Group, Company, CompanyUser, CompanyPermission } = require('../models');
+const { normalizePermissionDependencies } = require('../utils/companyPermissionDependencies');
 
 const ALLOWED_COMPANY_PERMISSIONS = [
   'dashboard.view',
   'campaign.view',
+  'campaign.create',
+  'campaign.manage',
+  'campaign.schedule',
   'campaign.send',
+  'group.send',
+  'contact.send',
   'contact.view',
+  'contact.create',
   'contact.manage',
   'group.view',
+  'group.create',
   'group.manage',
   'user.manage',
   'sms.send',
@@ -16,9 +24,24 @@ const ALLOWED_COMPANY_PERMISSIONS = [
   'appointment.manage',
   'inbox.view',
   'inbox.reply',
+  'inbox.assign',
+  'inbox.status',
   'geo.send',
   'billing.send',
   'company.manage',
+];
+
+const REQUIRED_COMPANY_PERMISSIONS = [
+  'dashboard.view',
+  'campaign.view',
+  'campaign.create',
+  'campaign.schedule',
+  'contact.view',
+  'contact.create',
+  'group.view',
+  'group.create',
+  'inbox.view',
+  'inbox.reply',
 ];
 
 const wherePlatformUser = {
@@ -27,7 +50,8 @@ const wherePlatformUser = {
 
 const sanitizePermissions = (permissions = []) => {
   if (!Array.isArray(permissions)) return [];
-  return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(String(p)))));
+  return normalizePermissionDependencies(permissions.filter((p) =>
+    ALLOWED_COMPANY_PERMISSIONS.includes(String(p))));
 };
 
 const toSlug = (value = '') =>
@@ -53,6 +77,18 @@ const admin = async (req, res) => {
   res.send('Admin page');
 };
 
+const canViewPlatformDashboard = (user) =>
+  user?.role === 'admin' ||
+  (user?.accountScope === 'platform' &&
+    Array.isArray(user.permissions) &&
+    user.permissions.includes('dashboard.view'));
+
+const hasPlatformPermission = (user, permission) =>
+  user?.role === 'admin' ||
+  (user?.accountScope === 'platform' &&
+    Array.isArray(user.permissions) &&
+    user.permissions.includes(permission));
+
 const getAllUsers = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -74,18 +110,46 @@ const getAllUsers = async (req, res) => {
         }
       : {};
 
-    const where = { ...searchWhere, ...wherePlatformUser };
+    const where = searchWhere;
 
     const { rows, count } = await User.findAndCountAll({
       where,
       attributes: { exclude: ['password'] },
+      include: [
+        { association: 'creator', attributes: ['name', 'email'], required: false },
+        {
+          model: CompanyUser,
+          as: 'companyMemberships',
+          required: false,
+          include: [{ model: Company, as: 'company', required: false }],
+        },
+      ],
+      distinct: true,
       limit: pageSize,
       offset: (page - 1) * pageSize,
       order: [[sortBy, sortDir]],
     });
 
+    const data = rows.map((row) => {
+      const user = row.toJSON();
+      const membership = user.companyMemberships?.[0];
+      delete user.companyMemberships;
+      if (!membership) return user;
+
+      return {
+        ...user,
+        role: membership.role === 'admin' ? 'company_admin' : membership.role,
+        company: membership.company || null,
+        companyPermissions: Array.isArray(membership.permissions)
+          ? membership.permissions
+          : [],
+        companyJoinedAt: membership.createdAt || null,
+        membershipId: membership.id,
+      };
+    });
+
     res.json({
-      data: rows,
+      data,
       page,
       pageSize,
       total: count,
@@ -99,7 +163,7 @@ const getAllUsers = async (req, res) => {
 
 const updateUser = async (req, res) => {
   try {
-    const { name, email, role, phoneNumber, password } = req.body;
+    const { name, email, role, phoneNumber, password, permissions } = req.body;
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (user.accountScope === 'tenant') {
@@ -119,6 +183,9 @@ const updateUser = async (req, res) => {
       role: role ?? user.role,
       phoneNumber: phoneNumber ?? user.phoneNumber,
       password: password ?? user.password,
+      permissions: permissions === undefined
+        ? user.permissions
+        : sanitizePermissions(permissions),
     });
 
     const safeUser = user.toJSON();
@@ -150,12 +217,15 @@ const deleteUser = async (req, res) => {
 
 const getDashboardStats = async (req, res) => {
   try {
+    if (!canViewPlatformDashboard(req.user)) {
+      return res.status(403).json({ message: 'Dashboard permission is required' });
+    }
     const [userCount, contactCount, campaignCount, messageCount, groupCount] = await Promise.all([
-      User.count({ where: wherePlatformUser }),
-      Contact.count(),
-      Campaign.count(),
-      Message.count(),
-      Group.count(),
+      hasPlatformPermission(req.user, 'user.manage') ? User.count({ where: wherePlatformUser }) : 0,
+      hasPlatformPermission(req.user, 'contact.view') ? Contact.count() : 0,
+      hasPlatformPermission(req.user, 'campaign.view') ? Campaign.count() : 0,
+      hasPlatformPermission(req.user, 'delivery.view') ? Message.count() : 0,
+      hasPlatformPermission(req.user, 'group.view') ? Group.count() : 0,
     ]);
     res.json({ userCount, contactCount, campaignCount, messageCount, groupCount });
   } catch (error) {
@@ -166,13 +236,16 @@ const getDashboardStats = async (req, res) => {
 
 const getRecentActivity = async (req, res) => {
   try {
-    const recentCampaigns = await Campaign.findAll({
+    if (!canViewPlatformDashboard(req.user)) {
+      return res.status(403).json({ message: 'Dashboard permission is required' });
+    }
+    const recentCampaigns = hasPlatformPermission(req.user, 'campaign.view') ? await Campaign.findAll({
       order: [['created_at', 'DESC']],
       limit: 10,
       include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    });
+    }) : [];
 
-    const recentMessages = await Message.findAll({
+    const recentMessages = hasPlatformPermission(req.user, 'delivery.view') ? await Message.findAll({
       order: [['created_at', 'DESC']],
       limit: 10,
       include: [
@@ -183,7 +256,7 @@ const getRecentActivity = async (req, res) => {
           include: [{ model: Group, as: 'group', required: false, attributes: ['id', 'name'] }],
         },
       ],
-    });
+    }) : [];
 
     res.json({ recentCampaigns, recentMessages });
   } catch (error) {
@@ -195,7 +268,10 @@ const getRecentActivity = async (req, res) => {
 const getCompanies = async (req, res) => {
   try {
     const companies = await Company.findAll({
-      include: [{ association: 'memberships', attributes: ['id'] }],
+      include: [
+        { association: 'memberships', attributes: ['id'] },
+        { association: 'creator', attributes: ['name', 'email'], required: false },
+      ],
       order: [['created_at', 'DESC']],
     });
 
@@ -258,13 +334,15 @@ const createCompany = async (req, res) => {
     });
 
     await CompanyPermission.bulkCreate(
-      ALLOWED_COMPANY_PERMISSIONS.map((permissionKey) => ({
+      ALLOWED_COMPANY_PERMISSIONS
+        .filter((permissionKey) => !REQUIRED_COMPANY_PERMISSIONS.includes(permissionKey))
+        .map((permissionKey) => ({
         companyId: company.id,
         permissionKey,
         isEnabled: enabledSet.has(permissionKey),
         config: {},
         grantedById: req.user?.id || null,
-      }))
+        }))
     );
 
     return res.status(201).json({ message: 'Company created successfully', company });
@@ -321,6 +399,7 @@ const createCompanyUser = async (req, res) => {
       phoneNumber: phoneNumber || null,
       role: normalizedRole.platformRole,
       accountScope: 'tenant',
+      createdById: req.user?.id || null,
     });
 
     const membership = await CompanyUser.create({

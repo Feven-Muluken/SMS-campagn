@@ -4,7 +4,11 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test tests/*.test.js",
+    "test:integration": "set RUN_MYSQL_INTEGRATION=true&& node --test tests/mysql.integration.test.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:migrate:status": "node scripts/migrationStatus.js",
+    "bootstrap:admin": "node scripts/bootstrapAdmin.js",
     "dev": "nodemon server.js",
     "start": "node server.js"
   },
@@ -38,6 +42,7 @@
     "eslint": "^9.39.2",
     "nodemon": "^3.1.11",
     "prettier": "^3.7.4",
+    "supertest": "^7.1.4",
     "sequelize-cli": "^6.6.3",
     "vite": "^7.3.0",
     "vite-plugin-eslint": "^1.8.1"

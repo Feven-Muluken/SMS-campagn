@@ -14,6 +14,21 @@ Message.init({
     allowNull: true,
     field: 'campaign_id',
   },
+  companyId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'company_id',
+  },
+  conversationId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'conversation_id',
+  },
+  sentById: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'sent_by_id',
+  },
   groupId: {
     type: DataTypes.INTEGER.UNSIGNED,
     allowNull: true,
@@ -39,7 +54,7 @@ Message.init({
     allowNull: false,
   },
   status: {
-    type: DataTypes.ENUM('pending', 'sent', 'failed'),
+    type: DataTypes.ENUM('pending', 'sent', 'delivered', 'failed'),
     allowNull: false,
     defaultValue: 'pending',
   },
@@ -67,6 +82,12 @@ Message.init({
     type: DataTypes.STRING(32),
     allowNull: true,
     field: 'network_delivery_status',
+  },
+  deliveredAt: { type: DataTypes.DATE, allowNull: true, field: 'delivered_at' },
+  failedAt: { type: DataTypes.DATE, allowNull: true, field: 'failed_at' },
+  channel: {
+    type: DataTypes.STRING(24),
+    allowNull: true,
   },
 }, {
   sequelize,

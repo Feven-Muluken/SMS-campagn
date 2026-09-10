@@ -46,7 +46,7 @@ const AdminLayout = () => {
     { id: 'send-sms', label: 'Send SMS', icon: FiMessageCircle, path: '/send-sms', permission: 'sms.send' },
     { id: 'delivery-status', label: 'Delivery', icon: FiBarChart2, path: '/delivery-status', permission: 'delivery.view' },
     { id: 'appointments', label: 'Appointment', icon: FiBarChart2, path: '/appointments', permission: 'appointment.view' },
-    { id: 'inbox', label: 'Inbox Chat', icon: FiMessageCircle, path: '/premium/two-way-chat', permission: 'inbox.view' },
+    { id: 'inbox', label: 'Inbox Chat', icon: FiMessageCircle, path: '/premium/two-way-chat', permission: null },
     { id: 'geo', label: 'Geo SMS', icon: FiSend, path: '/premium/geo-marketing', permission: 'geo.send' },
     { id: 'billing', label: 'Billing SMS', icon: FiPhone, path: '/premium/billing-alerts', permission: 'billing.send' },
     { id: 'my-profile', label: 'My profile', icon: FiUser, path: '/profile', permission: null },

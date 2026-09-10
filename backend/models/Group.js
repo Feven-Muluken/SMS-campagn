@@ -18,6 +18,11 @@ Group.init({
     allowNull: false,
     field: 'owner_id',
   },
+  companyId: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'company_id',
+  },
   
 }, {
   sequelize,
@@ -25,6 +30,7 @@ Group.init({
   tableName: 'groups',
   timestamps: true,
   underscored: true,
+  indexes: [{ fields: ['company_id'], name: 'groups_company_id_idx' }],
 });
 
 module.exports = Group;

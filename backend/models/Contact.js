@@ -16,7 +16,6 @@ Contact.init({
   phoneNumber: {
     type: DataTypes.STRING(32),
     allowNull: false,
-    unique: true,
   },
   createdById: {
     type: DataTypes.INTEGER.UNSIGNED,
@@ -40,6 +39,13 @@ Contact.init({
   tableName: 'contacts',
   timestamps: true,
   underscored: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['company_id', 'phone_number'],
+      name: 'contacts_company_phone_unique_idx',
+    },
+  ],
 });
 
 module.exports = Contact;

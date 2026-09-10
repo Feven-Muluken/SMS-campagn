@@ -101,8 +101,8 @@ function App() {
             <Route path='/campaign/new' element={<CreateCampaign />}/>
             <Route path="delivery-status" element={<ProtectedRoute permission="delivery.view"><DeliveryStatus /></ProtectedRoute>} />
             <Route path="appointments" element={<ProtectedRoute permission="appointment.view"><AppointmentSystem /></ProtectedRoute>} />
-            <Route path="premium/two-way-chat" element={<ProtectedRoute permission="inbox.view"><SupportInbox /></ProtectedRoute>} />
-            <Route path="premium/ticketing-support" element={<ProtectedRoute permission="inbox.view"><SupportInbox /></ProtectedRoute>} />
+            <Route path="premium/two-way-chat" element={<ProtectedRoute><SupportInbox /></ProtectedRoute>} />
+            <Route path="premium/ticketing-support" element={<ProtectedRoute><SupportInbox /></ProtectedRoute>} />
             <Route path="premium/geo-marketing" element={<ProtectedRoute permission="geo.send"><GeoMarketing /></ProtectedRoute>} />
             <Route path="premium/billing-alerts" element={<ProtectedRoute permission="billing.send"><BillingAlerts /></ProtectedRoute>} />
             <Route path="premium/:slug" element={<PremiumFeatureDetail />} />

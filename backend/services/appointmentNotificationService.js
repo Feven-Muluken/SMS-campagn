@@ -45,6 +45,7 @@ const templates = () => ({
 
 const createMessageLog = async ({ appointment, content, status, response, sentAt, providerMessageId }) => {
   await Message.create({
+    companyId: appointment.companyId || null,
     campaignId: null,
     recipientType: 'Contact',
     recipientId: appointment.contactId || null,
@@ -142,19 +143,19 @@ const getFollowUpMinutes = (appointment) => {
   return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : 120;
 };
 
-const getGraceMinutes = () => {
-  const fromEnv = Number(process.env.APPT_NOTIFICATION_GRACE_MINUTES);
-  return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : 15;
+const getCatchupMinutes = () => {
+  const fromEnv = Number(process.env.APPT_NOTIFICATION_CATCHUP_MINUTES);
+  return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : 24 * 60;
 };
 
 const processDueNotificationsOnce = async () => {
   const now = new Date();
-  const graceMinutes = getGraceMinutes();
+  const catchupMinutes = getCatchupMinutes();
 
   // Reminders: send around (scheduledAt - lead)
-  // We look for appointments whose "lead moment" is within +/- grace window.
+  // Catch up due reminders after a short outage, but never send them early.
   // leadMoment = scheduledAt - leadMinutes
-  // due when: leadMoment between now - grace and now + grace
+  // due when: leadMoment is between the catch-up boundary and now.
 
   const candidates = await Appointment.findAll({
     where: {
@@ -175,10 +176,9 @@ const processDueNotificationsOnce = async () => {
     if (appointment.status === 'booked' && !appointment.reminderSentAt) {
       const leadMinutes = getLeadMinutes(appointment);
       const leadMoment = new Date(new Date(appointment.scheduledAt).getTime() - leadMinutes * 60 * 1000);
-      const min = new Date(now.getTime() - graceMinutes * 60 * 1000);
-      const max = new Date(now.getTime() + graceMinutes * 60 * 1000);
+      const min = new Date(now.getTime() - catchupMinutes * 60 * 1000);
 
-      if (leadMoment >= min && leadMoment <= max) {
+      if (leadMoment >= min && leadMoment <= now && new Date(appointment.scheduledAt) >= now) {
         try {
           await sendAppointmentSMS({ appointment, type: 'reminder' });
           await markSentField({ appointmentId: appointment.id, field: 'reminderSentAt', value: new Date(), errorMessage: null });
@@ -198,10 +198,9 @@ const processDueNotificationsOnce = async () => {
     if (appointment.status === 'completed' && !appointment.followUpSentAt) {
       const followUpMinutes = getFollowUpMinutes(appointment);
       const followUpMoment = new Date(new Date(appointment.scheduledAt).getTime() + followUpMinutes * 60 * 1000);
-      const min = new Date(now.getTime() - graceMinutes * 60 * 1000);
-      const max = new Date(now.getTime() + graceMinutes * 60 * 1000);
+      const min = new Date(now.getTime() - catchupMinutes * 60 * 1000);
 
-      if (followUpMoment >= min && followUpMoment <= max) {
+      if (followUpMoment >= min && followUpMoment <= now) {
         try {
           await sendAppointmentSMS({ appointment, type: 'followup' });
           await markSentField({ appointmentId: appointment.id, field: 'followUpSentAt', value: new Date(), errorMessage: null });
@@ -233,6 +232,10 @@ const startAppointmentScheduler = () => {
 
   console.log(`Appointment scheduler started (interval=${intervalMs}ms, tz=${getTimeZone()})`);
 
+  processDueNotificationsOnce().catch((err) => {
+    console.error('Appointment scheduler initial tick error:', err);
+  });
+
   setInterval(async () => {
     try {
       await processDueNotificationsOnce();
@@ -247,4 +250,5 @@ module.exports = {
   sendConfirmationIfNeeded,
   sendCancellationIfNeeded,
   startAppointmentScheduler,
+  processDueNotificationsOnce,
 };

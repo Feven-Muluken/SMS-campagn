@@ -32,7 +32,69 @@ npm install
 npm run dev
 ```
 
+## First administrator
+
+On a fresh database, set the three `BOOTSTRAP_ADMIN_*` values from
+`.env.example`, then run this command once:
+
+```bash
+npm run bootstrap:admin
+```
+
+Remove the bootstrap password from the environment immediately afterward.
+The command refuses to overwrite an existing user.
+
+## Production startup
+
+Use `NODE_ENV=production`, HTTPS, strong unique JWT/webhook/location secrets,
+an explicit HTTPS `CORS_ORIGIN`, and a non-empty database password. Production
+configuration is validated before the database connection is opened.
+
+Schema maintenance does not run automatically in production. Back up MySQL,
+then run migrations as a separate deployment step:
+
+```bash
+npm run db:migrate:status
+npm run db:migrate
+npm start
+```
+
+The first migration safely adopts an existing installation or creates the
+current schema for an empty database. Applied files are recorded in
+`schema_migrations`, and a MySQL advisory lock prevents concurrent migration
+runs. Production startup refuses to run when migrations are pending or model
+columns are missing. Add every future schema change as a new timestamped file
+in `migrations/`; never edit a migration already applied to a shared database.
+
+## Database-backed acceptance tests
+
+The integration suite creates and later drops only the isolated MySQL database
+`sms_campaign_integration_test`. It never modifies `DB_NAME` from `.env`.
+
+```bash
+npm run test:integration
+```
+
+It verifies real MySQL password hashing/login, first-admin bootstrap, company
+isolation, permission rejection, contact/group CRUD, sender-ID approval, SMS
+message persistence, delivery and inbound webhooks, inbox replies, campaign
+dispatch, password-reset email transport, reset-token replay protection, and
+appointment reminder dispatch. SMS and email use test-only transports during
+this suite, so tests never contact customers or consume provider credit.
+
+Before production acceptance, separately send one message to a phone number
+owned by the client and verify its provider delivery callback. This step costs
+provider credit and must not be automated in the integration suite.
+
 After this, `POST /auth/forgot-password` sends the reset link to the target email.
+
+## Mobile app and production networking
+
+- The Flutter app can test and save the API address from its login/settings screen. Use `10.0.2.2` for an Android emulator, a LAN IP for a physical device during development, and an HTTPS public hostname in production.
+- `GET /health` is intentionally public and returns only service/provider routing status; it never returns credentials.
+- Set `CORS_ORIGIN` to a comma-separated allowlist of trusted web origins.
+- Set `TRUST_PROXY` only to the reverse proxy addresses you control. The default `loopback` is safe for a same-host proxy.
+- Provider credentials belong only in backend environment variables. Never include Africa's Talking or MobileSMS.io tokens in the Flutter build.
 
 ## SMS provider setup
 
@@ -40,6 +102,10 @@ Outbound SMS is routed by `SMS_PROVIDER`.
 
 - `SMS_PROVIDER=africastalking` uses the Africa's Talking SDK.
 - `SMS_PROVIDER=mobilesms_io` uses the MobileSMS.io HTTP adapter.
+
+When `SMS_PROVIDER_USER_SELECTABLE=true`, authenticated users can choose either provider on the Send SMS screen. Africa's Talking remains the default when `SMS_PROVIDER=africastalking`. In production, selectable routing requires valid credentials for both providers so the UI never offers a provider that cannot send. Set it to `false` to enforce the server default for every company and request.
+
+For real delivery receipts, configure a public HTTPS callback in each provider dashboard. `providerMessageId` is stored on send and matched when the callback arrives. Set `SMS_WEBHOOK_SECRET` and configure the provider to send the same secret; leaving it empty makes callback endpoints unauthenticated and is not recommended for production.
 
 For MobileSMS.io, set at least:
 

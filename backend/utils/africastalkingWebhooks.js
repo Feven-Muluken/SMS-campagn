@@ -18,6 +18,7 @@ const firstDefined = (...values) => values.find((value) => value !== undefined &
 const pickInbound = (body = {}) => {
   const mobileSmsPaths = {
     from: String(process.env.MOBILESMS_IO_WEBHOOK_FROM_PATH || '').trim(),
+    to: String(process.env.MOBILESMS_IO_WEBHOOK_TO_PATH || '').trim(),
     text: String(process.env.MOBILESMS_IO_WEBHOOK_TEXT_PATH || '').trim(),
     id: String(process.env.MOBILESMS_IO_WEBHOOK_MESSAGE_ID_PATH || '').trim(),
     date: String(process.env.MOBILESMS_IO_WEBHOOK_DATE_PATH || '').trim(),
@@ -51,6 +52,16 @@ const pickInbound = (body = {}) => {
     ''
   );
 
+  const to = firstDefined(
+    getByPath(body, mobileSmsPaths.to),
+    body.to,
+    body.recipient,
+    body.destination,
+    body.shortCode,
+    body.short_code,
+    null
+  );
+
   const id = firstDefined(
     getByPath(body, mobileSmsPaths.id),
     body.id,
@@ -76,6 +87,7 @@ const pickInbound = (body = {}) => {
 
   return {
     from: String(from || '').trim(),
+    to: to == null ? null : String(to).trim(),
     text: String(text || '').trim(),
     id: id == null ? null : id,
     date: date == null ? null : date,

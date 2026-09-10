@@ -1,13 +1,21 @@
 const { Op } = require('sequelize');
-const { Company, CompanyUser, CompanyPermission, User } = require('../models');
+const { Company, CompanyUser, CompanyPermission, User, Contact, Group, Campaign, Message } = require('../models');
+const { normalizePermissionDependencies } = require('../utils/companyPermissionDependencies');
 
 const ALLOWED_COMPANY_PERMISSIONS = [
   'dashboard.view',
   'campaign.view',
+  'campaign.create',
+  'campaign.manage',
+  'campaign.schedule',
   'campaign.send',
+  'group.send',
+  'contact.send',
   'contact.view',
+  'contact.create',
   'contact.manage',
   'group.view',
+  'group.create',
   'group.manage',
   'user.manage',
   'sms.send',
@@ -16,9 +24,17 @@ const ALLOWED_COMPANY_PERMISSIONS = [
   'appointment.manage',
   'inbox.view',
   'inbox.reply',
+  'inbox.assign',
+  'inbox.status',
   'geo.send',
   'billing.send',
   'company.manage',
+];
+
+const REQUIRED_COMPANY_PERMISSIONS = [
+  'dashboard.view', 'campaign.view', 'campaign.create', 'campaign.schedule',
+  'contact.view', 'contact.create', 'group.view', 'group.create',
+  'inbox.view', 'inbox.reply',
 ];
 
 const ROLE_PERMISSION_TEMPLATES = {
@@ -26,7 +42,10 @@ const ROLE_PERMISSION_TEMPLATES = {
   staff: [
     'dashboard.view',
     'campaign.view',
+    'campaign.manage',
     'campaign.send',
+    'group.send',
+    'contact.send',
     'contact.view',
     'contact.manage',
     'group.view',
@@ -37,6 +56,7 @@ const ROLE_PERMISSION_TEMPLATES = {
     'appointment.manage',
     'inbox.view',
     'inbox.reply',
+    'inbox.status',
     'geo.send',
     'billing.send',
   ],
@@ -45,7 +65,8 @@ const ROLE_PERMISSION_TEMPLATES = {
 
 const sanitizePermissions = (permissions = []) => {
   if (!Array.isArray(permissions)) return [];
-  return Array.from(new Set(permissions.filter((p) => ALLOWED_COMPANY_PERMISSIONS.includes(String(p)))));
+  return normalizePermissionDependencies(permissions.filter((p) =>
+    ALLOWED_COMPANY_PERMISSIONS.includes(String(p))));
 };
 
 const roleTemplateForMembershipRole = (membershipRole) => {
@@ -81,9 +102,9 @@ const toSlug = (value = '') =>
 
 const computeEffectiveMembershipPermissions = ({ role, membershipPermissions = [], companyPermissionKeys = [], companyLegacyPermissions = [] }) => {
   const roleTemplate = ROLE_PERMISSION_TEMPLATES[String(role || 'viewer').toLowerCase()] || ROLE_PERMISSION_TEMPLATES.viewer;
-  const effectiveRole = membershipPermissions.length ? sanitizePermissions(membershipPermissions) : roleTemplate;
-  const companyEnabled = new Set([...companyPermissionKeys, ...companyLegacyPermissions]);
-  return effectiveRole.filter((p) => companyEnabled.has(p));
+  const effectiveRole = sanitizePermissions(membershipPermissions);
+  const companyEnabled = new Set([...REQUIRED_COMPANY_PERMISSIONS, ...companyPermissionKeys, ...companyLegacyPermissions]);
+  return Array.from(new Set(effectiveRole.filter((p) => companyEnabled.has(p))));
 };
 
 const canManageCompany = async (user, companyId) => {
@@ -112,8 +133,8 @@ const canManageCompany = async (user, companyId) => {
     companyLegacyPermissions,
   });
 
-  if (!effective.includes('company.manage')) {
-    return { ok: false, status: 403, message: 'Permission denied: company.manage is required' };
+  if (!effective.includes('company.manage') && !effective.includes('user.manage')) {
+    return { ok: false, status: 403, message: 'Permission denied: user management permission is required' };
   }
 
   return { ok: true, membership, company };
@@ -164,14 +185,24 @@ const getCompanySummary = async (req, res) => {
 const getManageableCompanies = async (req, res) => {
   try {
     if (req.user?.role === 'admin') {
-      const companies = await Company.findAll({ include: [{ association: 'memberships', attributes: ['id'] }], order: [['created_at', 'DESC']] });
+      const companies = await Company.findAll({
+        include: [
+          { association: 'memberships', attributes: ['id'] },
+          { association: 'creator', attributes: ['name', 'email'], required: false },
+        ],
+        order: [['created_at', 'DESC']],
+      });
       const data = companies.map((company) => ({ ...company.toJSON(), membersCount: company.memberships?.length || 0 }));
       return res.json({ data });
     }
 
     const memberships = await CompanyUser.findAll({
       where: { userId: req.user.id },
-      include: [{ model: Company, as: 'company' }],
+      include: [{
+        model: Company,
+        as: 'company',
+        include: [{ association: 'creator', attributes: ['name', 'email'], required: false }],
+      }],
       order: [['created_at', 'DESC']],
     });
 
@@ -251,7 +282,12 @@ const listCompanyUsers = async (req, res) => {
 
     const memberships = await CompanyUser.findAll({
       where: { companyId },
-      include: [{ model: User, as: 'user', attributes: { exclude: ['password'] } }],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: { exclude: ['password'] },
+        include: [{ association: 'creator', attributes: ['name', 'email'], required: false }],
+      }],
       order: [['createdAt', 'DESC']],
     });
 
@@ -299,6 +335,7 @@ const createCompanyUserManaged = async (req, res) => {
       phoneNumber: phoneNumber || null,
       role: normalizedRole.platformRole,
       accountScope: 'tenant',
+      createdById: req.user?.id || null,
     });
 
     const membership = await CompanyUser.create({
@@ -398,12 +435,89 @@ const updateCompanyUserManaged = async (req, res) => {
   }
 };
 
+const getCompanyDashboard = async (req, res) => {
+  try {
+    const companyId = Number(req.params.id);
+    if (!companyId || Number(req.companyContext?.companyId) !== companyId) {
+      return res.status(403).json({ message: 'The active company does not match this dashboard' });
+    }
+
+    const permissions = new Set(req.companyContext.permissions || []);
+    const [contactCount, groupCount, campaignCount, messageCount] = await Promise.all([
+      permissions.has('contact.view') ? Contact.count({ where: { companyId } }) : 0,
+      permissions.has('group.view') ? Group.count({ where: { companyId } }) : 0,
+      permissions.has('campaign.view') ? Campaign.count({ where: { companyId } }) : 0,
+      permissions.has('delivery.view') ? Message.count({ where: { companyId } }) : 0,
+    ]);
+
+    const [recentCampaigns, recentMessages] = await Promise.all([
+      permissions.has('campaign.view')
+        ? Campaign.findAll({
+            where: { companyId },
+            order: [['created_at', 'DESC']],
+            limit: 5,
+            include: [{ association: 'creator', attributes: ['id', 'name', 'email'], required: false }],
+          })
+        : [],
+      permissions.has('delivery.view')
+        ? Message.findAll({
+            where: { companyId },
+            order: [['created_at', 'DESC']],
+            limit: 5,
+            include: [{
+              association: 'campaign',
+              required: false,
+              attributes: ['id', 'name', 'groupId'],
+              include: [{ model: Group, as: 'group', required: false, attributes: ['id', 'name'] }],
+            }],
+          })
+        : [],
+    ]);
+
+    return res.json({
+      stats: { contactCount, groupCount, campaignCount, messageCount },
+      recentCampaigns,
+      recentMessages,
+    });
+  } catch (error) {
+    console.error('Company dashboard error:', error);
+    return res.status(500).json({ message: 'Failed to load company dashboard' });
+  }
+};
+
+const deleteCompanyUserManaged = async (req, res) => {
+  try {
+    const companyId = Number(req.params.id);
+    const membershipId = Number(req.params.membershipId);
+    if (!companyId || !membershipId) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const access = await canManageCompany(req.user, companyId);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const membership = await CompanyUser.findOne({ where: { id: membershipId, companyId } });
+    if (!membership) return res.status(404).json({ message: 'Company membership not found' });
+    if (membership.userId === req.user?.id) {
+      return res.status(409).json({ message: 'You cannot remove your own active company account' });
+    }
+
+    await membership.destroy();
+    return res.json({ message: 'Company user removed successfully' });
+  } catch (error) {
+    console.error('Delete managed company user error:', error);
+    return res.status(500).json({ message: 'Failed to remove company user' });
+  }
+};
+
 module.exports = {
   getManageableCompanies,
   getCompanySummary,
+  getCompanyDashboard,
   updateCompany,
   listCompanyUsers,
   createCompanyUserManaged,
   updateCompanyUserManaged,
+  deleteCompanyUserManaged,
   canManageCompany,
 };

@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Campaign, CampaignRecipient, Contact, User, Group, Message, CampaignDispatch } = require('../models');
+const { Campaign, CampaignRecipient, Contact, User, Group, Message, CampaignDispatch, CompanySenderId } = require('../models');
 const { sendSMS } = require('./smsService');
 const { personalizeMessage } = require('../utils/smsTemplate');
 
@@ -14,22 +14,32 @@ const addInterval = (date, interval) => {
   if (Number.isNaN(d.getTime())) return null;
 
   if (interval === 'daily') {
-    d.setDate(d.getDate() + 1);
+    d.setUTCDate(d.getUTCDate() + 1);
     return d;
   }
   if (interval === 'weekly') {
-    d.setDate(d.getDate() + 7);
+    d.setUTCDate(d.getUTCDate() + 7);
     return d;
   }
   if (interval === 'monthly') {
-    const day = d.getDate();
-    d.setMonth(d.getMonth() + 1);
+    const day = d.getUTCDate();
+    d.setUTCMonth(d.getUTCMonth() + 1);
     // handle month rollovers (e.g. Jan 31 -> Feb)
-    if (d.getDate() < day) d.setDate(0);
+    if (d.getUTCDate() < day) d.setUTCDate(0);
     return d;
   }
 
   return null;
+};
+
+const nextOccurrenceAfter = (scheduledFor, interval, reference = new Date()) => {
+  let next = addInterval(scheduledFor, interval);
+  let guard = 0;
+  while (next && next <= reference && guard < 10_000) {
+    next = addInterval(next, interval);
+    guard += 1;
+  }
+  return next;
 };
 
 const resolveCampaignRecipients = async (campaign) => {
@@ -38,11 +48,25 @@ const resolveCampaignRecipients = async (campaign) => {
   const userIds = links.filter((l) => l.recipientType === 'User').map((l) => l.recipientId);
 
   const [directContacts, directUsers] = await Promise.all([
-    contactIds.length ? Contact.findAll({ where: { id: contactIds } }) : [],
+    contactIds.length ? Contact.findAll({
+      where: {
+        id: contactIds,
+        ...(campaign.companyId ? { companyId: campaign.companyId } : { createdById: campaign.createdById }),
+      },
+    }) : [],
     userIds.length ? User.findAll({ where: { id: userIds }, attributes: { exclude: ['password'] } }) : [],
   ]);
 
   let recipients = [...directContacts, ...directUsers];
+
+  if (campaign.type === 'broadcast/everyone') {
+    const broadcastContacts = await Contact.findAll({
+      where: campaign.companyId
+        ? { companyId: campaign.companyId }
+        : { createdById: campaign.createdById },
+    });
+    recipients = [...recipients, ...broadcastContacts];
+  }
 
   if (campaign.groupId) {
     const group = await Group.findByPk(campaign.groupId, {
@@ -71,6 +95,12 @@ const seedPendingMessagesForCampaign = async (campaignId) => {
   if (!campaign?.schedule) return;
   if (new Date(campaign.schedule) <= new Date()) return;
 
+  const scheduledFor = new Date(campaign.schedule);
+  const [dispatch] = await CampaignDispatch.findOrCreate({
+    where: { campaignId: campaign.id, scheduledFor },
+    defaults: { status: 'pending' },
+  });
+
   const recipients = await resolveCampaignRecipients(campaign);
   for (const r of recipients) {
     const phoneNumber = r.phoneNumber;
@@ -90,6 +120,7 @@ const seedPendingMessagesForCampaign = async (campaignId) => {
       user: recipientType === 'User' ? r : undefined,
     });
     await Message.create({
+      companyId: campaign.companyId || null,
       campaignId: campaign.id,
       groupId: campaign.groupId || null,
       recipientType,
@@ -97,11 +128,18 @@ const seedPendingMessagesForCampaign = async (campaignId) => {
       phoneNumber,
       content,
       status: 'pending',
+      response: {
+        direction: 'outbound',
+        dispatch: {
+          dispatchId: String(dispatch.id),
+          scheduledFor: scheduledFor.toISOString(),
+        },
+      },
     });
   }
 };
 
-const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
+const dispatchCampaignOnce = async ({ campaign, dispatch, scheduledFor, senderId }) => {
   const recipients = await resolveCampaignRecipients(campaign);
   if (!recipients.length) {
     return { successCount: 0, failCount: 0, total: 0, message: 'No recipients found' };
@@ -111,7 +149,11 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
   let successCount = 0;
   let failCount = 0;
 
-  for (const recipient of recipients) {
+  for (let index = 0; index < recipients.length; index += 1) {
+    const recipient = recipients[index];
+    if (index > 0 && index % 25 === 0) {
+      await dispatch.update({ dispatchedAt: new Date() }, { silent: true });
+    }
     const phoneNumber = recipient.phoneNumber || null;
     const recipientType = recipient.constructor.name === 'Contact' ? 'Contact' : 'User';
 
@@ -134,18 +176,30 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
       },
     });
 
+    const dispatchMetadata = {
+      direction: 'outbound',
+      dispatch: {
+        dispatchId: String(dispatch.id),
+        scheduledFor: scheduledFor.toISOString(),
+      },
+    };
+
     try {
-      const { response, providerMessageId } = await sendSMS(phoneNumber, content, { senderId });
+      const { response, providerMessageId, provider } = await sendSMS(phoneNumber, content, { senderId });
       if (existing) {
         await existing.update({
+          companyId: campaign.companyId || null,
           content,
           status: 'sent',
-          response: { direction: 'outbound', providerResponse: response },
+          response: { ...dispatchMetadata, providerResponse: response },
           providerMessageId,
+          provider,
           sentAt: new Date(),
+          failedAt: null,
         });
       } else {
         await Message.create({
+          companyId: campaign.companyId || null,
           campaignId: campaign.id,
           groupId: campaign.groupId || null,
           recipientType,
@@ -153,8 +207,9 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
           phoneNumber,
           content,
           status: 'sent',
-          response: { direction: 'outbound', providerResponse: response },
+          response: { ...dispatchMetadata, providerResponse: response },
           providerMessageId,
+          provider,
           sentAt: new Date(),
         });
       }
@@ -162,12 +217,15 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
     } catch (err) {
       if (existing) {
         await existing.update({
+          companyId: campaign.companyId || null,
           content,
           status: 'failed',
-          response: { direction: 'outbound', error: err?.message || String(err) },
+          response: { ...dispatchMetadata, error: err?.message || String(err) },
+          failedAt: new Date(),
         });
       } else {
         await Message.create({
+          companyId: campaign.companyId || null,
           campaignId: campaign.id,
           groupId: campaign.groupId || null,
           recipientType,
@@ -175,7 +233,8 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
           phoneNumber,
           content,
           status: 'failed',
-          response: { direction: 'outbound', error: err?.message || String(err) },
+          response: { ...dispatchMetadata, error: err?.message || String(err) },
+          failedAt: new Date(),
         });
       }
       failCount += 1;
@@ -185,7 +244,32 @@ const dispatchCampaignOnce = async ({ campaign, scheduledFor, senderId }) => {
   return { successCount, failCount, total: recipients.length };
 };
 
+const failPendingMessagesForDispatch = async ({ campaign, dispatch, scheduledFor, error }) => {
+  const pending = await Message.findAll({
+    where: { campaignId: campaign.id, status: 'pending' },
+  });
+  for (const message of pending) {
+    await message.update({
+      status: 'failed',
+      failedAt: new Date(),
+      response: {
+        direction: 'outbound',
+        dispatch: {
+          dispatchId: String(dispatch.id),
+          scheduledFor: scheduledFor.toISOString(),
+        },
+        error,
+      },
+    });
+  }
+};
+
 const shouldRetryFailed = () => (process.env.CAMPAIGN_SCHEDULER_RETRY_FAILED || '').toLowerCase() === 'true';
+
+const dispatchClaimTimeoutMs = () => {
+  const configured = Number(process.env.CAMPAIGN_DISPATCH_CLAIM_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured >= 60_000 ? configured : 10 * 60_000;
+};
 
 const processDueCampaignsOnce = async () => {
   const now = new Date();
@@ -202,13 +286,20 @@ const processDueCampaignsOnce = async () => {
 
   if (!dueCampaigns.length) return;
 
-  const normalizedSenderId = normalizeSenderId(process.env.CAMPAIGN_SENDER_ID || process.env.AT_SENDER_ID);
+  const fallbackSenderId = normalizeSenderId(process.env.CAMPAIGN_SENDER_ID || process.env.AT_SENDER_ID);
 
   for (const campaign of dueCampaigns) {
     // Guard: schedule can be null if a row changed between query + loop
     if (!campaign.schedule) continue;
 
     const scheduledFor = new Date(campaign.schedule);
+    const companySender = campaign.companyId
+      ? await CompanySenderId.findOne({
+          where: { companyId: campaign.companyId, status: 'approved', isActive: true },
+          order: [['createdAt', 'ASC']],
+        })
+      : null;
+    const effectiveSenderId = companySender?.senderId || fallbackSenderId;
 
     // Prevent duplicate sends for the exact same scheduled time
     const [dispatch, created] = await CampaignDispatch.findOrCreate({
@@ -216,38 +307,104 @@ const processDueCampaignsOnce = async () => {
       defaults: { status: 'pending' },
     });
 
-    if (!created) {
-      if (dispatch.status === 'sent') continue;
-      if (dispatch.status === 'failed' && !shouldRetryFailed()) continue;
-      // If it's still pending, another worker/tick probably grabbed it.
-      if (dispatch.status === 'pending') continue;
+    // Atomically claim the dispatch. Previously, findOrCreate returned a newly
+    // created `pending` row and the code immediately skipped it as though a
+    // different worker had created it. That meant scheduled campaigns never
+    // reached dispatchCampaignOnce. dispatchedAt doubles as the claim marker
+    // while the send is in progress and is replaced with the completion time.
+    let claimed = false;
+    if (created || dispatch.status === 'pending') {
+      const staleBefore = new Date(Date.now() - dispatchClaimTimeoutMs());
+      const [claimCount] = await CampaignDispatch.update(
+        { dispatchedAt: new Date() },
+        {
+          where: {
+            id: dispatch.id,
+            status: 'pending',
+            [Op.or]: [
+              { dispatchedAt: null },
+              { dispatchedAt: { [Op.lt]: staleBefore } },
+            ],
+          },
+        }
+      );
+      claimed = claimCount === 1;
+    } else if (dispatch.status === 'failed' && shouldRetryFailed()) {
+      const [claimCount] = await CampaignDispatch.update(
+        { status: 'pending', dispatchedAt: new Date(), error: null },
+        { where: { id: dispatch.id, status: 'failed' } }
+      );
+      claimed = claimCount === 1;
     }
 
+    if (!claimed) continue;
+
     try {
-      const result = await dispatchCampaignOnce({ campaign, scheduledFor, senderId: normalizedSenderId });
+      const result = await dispatchCampaignOnce({
+        campaign,
+        dispatch,
+        scheduledFor,
+        senderId: effectiveSenderId,
+      });
+
+      const dispatchStatus = result.successCount === 0
+        ? 'failed'
+        : result.failCount > 0
+          ? 'partial'
+          : 'sent';
 
       await dispatch.update({
-        status: result.failCount > 0 && result.successCount === 0 ? 'failed' : 'sent',
+        status: dispatchStatus,
         dispatchedAt: new Date(),
         result,
-        error: null,
+        error: dispatchStatus === 'failed' ? (result.message || 'No messages were sent') : null,
       });
 
       // Move recurring campaigns forward, otherwise mark as sent
       if (campaign.recurringActive && campaign.recurringInterval) {
-        const next = addInterval(scheduledFor, campaign.recurringInterval);
-        if (next) {
+        const next = nextOccurrenceAfter(scheduledFor, campaign.recurringInterval, new Date());
+        const recurrenceEnd = campaign.recurrenceEndAt
+          ? new Date(campaign.recurrenceEndAt)
+          : null;
+        if (next && (!recurrenceEnd || next <= recurrenceEnd)) {
           await campaign.update({ schedule: next, status: 'pending' });
           await seedPendingMessagesForCampaign(campaign.id);
         } else {
-          await campaign.update({ status: 'sent' });
+          const finalStatus = result.successCount === 0
+            ? 'failed'
+            : result.failCount > 0
+              ? 'partial'
+              : 'sent';
+          await campaign.update({ status: finalStatus });
         }
       } else {
-        await campaign.update({ status: 'sent' });
+        const finalStatus = result.successCount === 0
+          ? 'failed'
+          : result.failCount > 0
+            ? 'partial'
+            : 'sent';
+        await campaign.update({ status: finalStatus });
       }
     } catch (err) {
       const msg = err?.message || String(err);
       await dispatch.update({ status: 'failed', dispatchedAt: new Date(), error: msg });
+      await failPendingMessagesForDispatch({
+        campaign,
+        dispatch,
+        scheduledFor,
+        error: msg,
+      });
+      if (campaign.recurringActive && campaign.recurringInterval) {
+        const next = nextOccurrenceAfter(scheduledFor, campaign.recurringInterval, new Date());
+        const recurrenceEnd = campaign.recurrenceEndAt
+          ? new Date(campaign.recurrenceEndAt)
+          : null;
+        if (next && (!recurrenceEnd || next <= recurrenceEnd)) {
+          await campaign.update({ schedule: next, status: 'pending' });
+          await seedPendingMessagesForCampaign(campaign.id);
+          continue;
+        }
+      }
       await campaign.update({ status: 'failed' });
     }
   }
@@ -267,6 +424,10 @@ const startCampaignScheduler = () => {
 
   console.log(`Campaign scheduler started (interval=${intervalMs}ms)`);
 
+  processDueCampaignsOnce().catch((err) => {
+    console.error('Campaign scheduler initial tick error:', err);
+  });
+
   setInterval(async () => {
     try {
       await processDueCampaignsOnce();
@@ -281,4 +442,6 @@ module.exports = {
   processDueCampaignsOnce,
   resolveCampaignRecipients,
   seedPendingMessagesForCampaign,
+  addInterval,
+  nextOccurrenceAfter,
 };

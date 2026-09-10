@@ -86,15 +86,20 @@ const handleLogin = async (e) => {
     });
     
     const token = res.data.token;
+    const refreshToken = res.data.refreshToken;
     // store token and decode
     const decoded = jwtDecode(token);
     
     if (loginForm.rememberMe){
       localStorage.setItem('token', token);
+      localStorage.setItem('refreshToken', refreshToken);
       sessionStorage.removeItem('token');
+      sessionStorage.removeItem('refreshToken');
     } else {
       sessionStorage.setItem('token', token);
+      sessionStorage.setItem('refreshToken', refreshToken);
       localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
     }
 
     setCompanyContext({

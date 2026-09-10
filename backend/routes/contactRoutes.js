@@ -10,7 +10,7 @@ const {
 } = require('../controllers/contactController');
 
 router.get('/', authMiddleware, requireCompanyMembership, requireCompanyPermission('contact.view'), getAllContacts);
-router.post('/', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('contact.manage'), createContact);
+router.post('/', authMiddleware, requireCompanyMembership, requireCompanyPermission('contact.create'), createContact);
 router.put('/:id', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('contact.manage'), updateContact);
 router.delete('/:id', authMiddleware, requireCompanyMembership, checkRole(['admin', 'staff']), requireCompanyPermission('contact.manage'), deleteContact);
 

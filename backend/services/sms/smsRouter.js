@@ -1,11 +1,13 @@
 const africastalkingProvider = require('./providers/africastalkingProvider');
 const mobilesmsIoProvider = require('./providers/mobilesmsIoProvider');
+const testProvider = require('./providers/testProvider');
 
 const normalizeProvider = (raw) => {
   const s = String(raw || 'africastalking')
     .trim()
     .toLowerCase()
     .replace(/-/g, '_');
+  if (s === 'test' && process.env.NODE_ENV === 'test') return 'test';
   if (s === 'mobilesms' || s === 'mobilesms_io' || s === 'mobilesmsio' || s === 'mobile_sms_io') {
     return 'mobilesms_io';
   }
@@ -19,11 +21,30 @@ const getDefaultProvider = () => normalizeProvider(process.env.SMS_PROVIDER);
 
 const getImplementation = (providerKey) => {
   const key = providerKey || getDefaultProvider();
+  if (process.env.NODE_ENV === 'test' && process.env.SMS_TEST_PROVIDER === 'true') {
+    return testProvider;
+  }
   if (key === 'mobilesms_io') return mobilesmsIoProvider;
+  if (key === 'test') return testProvider;
   return africastalkingProvider;
 };
 
 const isProviderSelectable = () => String(process.env.SMS_PROVIDER_USER_SELECTABLE || 'true').toLowerCase() === 'true';
+
+const isProviderConfigured = (providerKey) => {
+  if (providerKey === 'test') return process.env.NODE_ENV === 'test';
+  if (providerKey === 'mobilesms_io') {
+    const authStyle = String(process.env.MOBILESMS_IO_AUTH_STYLE || 'bearer').toLowerCase();
+    return Boolean(
+      String(process.env.MOBILESMS_IO_BASE_URL || '').trim() &&
+      (authStyle === 'none' || String(process.env.MOBILESMS_IO_API_KEY || '').trim())
+    );
+  }
+  return Boolean(
+    String(process.env.AT_USERNAME || '').trim() &&
+    String(process.env.AT_API_KEY || '').trim()
+  );
+};
 
 /**
  * Outbound SMS entry: picks provider from options.provider (if allowed) or SMS_PROVIDER fallback.
@@ -35,6 +56,9 @@ const sendSMS = async (phoneNumber, message, options = {}) => {
   // Allow per-request provider override if enabled
   if (isProviderSelectable() && options.provider) {
     const requested = normalizeProvider(options.provider);
+    if (!isProviderConfigured(requested)) {
+      throw new Error(`SMS provider ${requested} is not configured on the server`);
+    }
     if (requested !== providerKey) {
       console.log(`SMS: provider override ${requested} (default: ${providerKey})`);
     }
@@ -74,9 +98,14 @@ const extractProviderMessageId = (response) => {
 
 const describeActiveProvider = () => {
   const defaultProvider = getDefaultProvider();
+  const configured = {
+    africastalking: isProviderConfigured('africastalking'),
+    mobilesms_io: isProviderConfigured('mobilesms_io'),
+  };
   return {
     default: defaultProvider,
     available: ['africastalking', 'mobilesms_io'],
+    configured,
     userSelectable: isProviderSelectable(),
     routing: 'env-with-override',
     envVar: 'SMS_PROVIDER',
@@ -84,4 +113,4 @@ const describeActiveProvider = () => {
   };
 };
 
-module.exports = { sendSMS, extractProviderMessageId, getDefaultProvider, describeActiveProvider, isProviderSelectable };
+module.exports = { sendSMS, extractProviderMessageId, getDefaultProvider, describeActiveProvider, isProviderSelectable, isProviderConfigured };

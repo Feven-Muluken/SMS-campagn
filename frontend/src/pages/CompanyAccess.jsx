@@ -6,8 +6,13 @@ import axios from '../api/axiosInstance';
 import { useUser } from '../context/UserContext';
 import {
   COMPANY_PERMISSION_KEYS,
+  COMPANY_CONFIGURABLE_PERMISSION_KEYS,
+  ALWAYS_ENABLED_COMPANY_PERMISSIONS,
   companyRoleTemplates,
   labelPermission,
+  normalizePermissionDependencies,
+  permissionIsVisible,
+  togglePermissionWithDependencies,
 } from '../constants/companyPermissions';
 
 const uiRole = (membershipRole) => (membershipRole === 'admin' ? 'company_admin' : membershipRole);
@@ -22,7 +27,9 @@ const allowedPermissionsForRole = (role) => rolePermissionOptions[role] || roleP
 
 const normalizePermissionsByRole = (role, permissions = []) => {
   const allowed = new Set(allowedPermissionsForRole(role));
-  return Array.from(new Set((Array.isArray(permissions) ? permissions : []).filter((p) => allowed.has(p))));
+  return normalizePermissionDependencies(
+    Array.from(new Set((Array.isArray(permissions) ? permissions : []).filter((p) => allowed.has(p))))
+  );
 };
 
 const CompanyAccess = () => {
@@ -126,9 +133,9 @@ const CompanyAccess = () => {
   }, [companyId]);
 
   const togglePerm = (key) => {
-    setPermissionDraft((prev) =>
-      prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]
-    );
+    setPermissionDraft((prev) => togglePermissionWithDependencies(
+      prev, key, ALWAYS_ENABLED_COMPANY_PERMISSIONS
+    ));
   };
 
   const savePermissions = async () => {
@@ -136,7 +143,7 @@ const CompanyAccess = () => {
     setSavingPerms(true);
     try {
       await axios.put(`/company-permissions/${companyId}`, {
-        permissions: COMPANY_PERMISSION_KEYS.map((permissionKey) => ({
+        permissions: COMPANY_CONFIGURABLE_PERMISSION_KEYS.map((permissionKey) => ({
           permissionKey,
           isEnabled: permissionDraft.includes(permissionKey),
           config: {},
@@ -279,7 +286,9 @@ const CompanyAccess = () => {
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {COMPANY_PERMISSION_KEYS.map((key) => {
+                {COMPANY_CONFIGURABLE_PERMISSION_KEYS.filter((key) =>
+                  permissionIsVisible(key, permissionDraft, ALWAYS_ENABLED_COMPANY_PERMISSIONS)
+                ).map((key) => {
                   const on = permissionDraft.includes(key);
                   return (
                     <button
@@ -352,7 +361,9 @@ const CompanyAccess = () => {
                             </select>
                           </div>
                           <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                            {allowedPermissionsForRole(editForm.role).map((key) => {
+                            {allowedPermissionsForRole(editForm.role).filter((key) =>
+                              permissionIsVisible(key, editForm.permissions)
+                            ).map((key) => {
                               const on = editForm.permissions.includes(key);
                               return (
                                 <button
@@ -361,9 +372,7 @@ const CompanyAccess = () => {
                                   onClick={() =>
                                     setEditForm((p) => ({
                                       ...p,
-                                      permissions: on
-                                        ? p.permissions.filter((x) => x !== key)
-                                        : [...p.permissions, key],
+                                      permissions: togglePermissionWithDependencies(p.permissions, key),
                                     }))
                                   }
                                   className={`text-[10px] px-2 py-0.5 rounded border ${
@@ -469,7 +478,9 @@ const CompanyAccess = () => {
                   {creating ? '…' : 'Create'}
                 </button>
                 <div className="md:col-span-3 flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                  {allowedPermissionsForRole(newUser.role).map((key) => {
+                  {allowedPermissionsForRole(newUser.role).filter((key) =>
+                    permissionIsVisible(key, newUser.permissions)
+                  ).map((key) => {
                     const on = newUser.permissions.includes(key);
                     return (
                       <button
@@ -478,9 +489,7 @@ const CompanyAccess = () => {
                         onClick={() =>
                           setNewUser((p) => ({
                             ...p,
-                            permissions: on
-                              ? p.permissions.filter((x) => x !== key)
-                              : [...p.permissions, key],
+                            permissions: togglePermissionWithDependencies(p.permissions, key),
                           }))
                         }
                         className={`text-[10px] px-2 py-0.5 rounded border ${

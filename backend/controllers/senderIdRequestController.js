@@ -1,7 +1,9 @@
 const { SenderIdRequest, CompanySenderId, Company, User, sequelize } = require('../models');
 
-const normalizeSenderId = (value) => String(value || '').trim();
-const isValidSenderId = (senderId) => /^[a-zA-Z0-9]{1,11}$/.test(senderId);
+// Sender IDs are canonicalized so `Afroel` and `AFROEL` cannot be registered
+// as different identities. Numbers are optional; spaces/symbols are rejected.
+const normalizeSenderId = (value) => String(value || '').trim().toUpperCase();
+const isValidSenderId = (senderId) => /^[A-Z0-9]{1,11}$/.test(senderId);
 const normalizeCountryCodes = (input) => {
 	if (!input) return [];
 	const list = Array.isArray(input) ? input : [input];
@@ -30,18 +32,18 @@ const createSenderIdRequest = async (req, res) => {
 		}
 
 		const approvedAlready = await CompanySenderId.findOne({
-			where: { companyId, senderId, status: 'approved', isActive: true },
+			where: { senderId, status: 'approved', isActive: true },
 		});
 		if (approvedAlready) {
-			return res.status(400).json({ message: 'This sender ID is already approved for your company.' });
+			return res.status(409).json({ message: 'This sender ID is already registered.' });
 		}
 
 		const pendingRequest = await SenderIdRequest.findOne({
-			where: { companyId, senderId, status: 'pending' },
+			where: { senderId, status: 'pending' },
 		});
 
 		if (pendingRequest) {
-			return res.status(400).json({ message: 'A pending request for this sender ID already exists.' });
+			return res.status(409).json({ message: 'A pending request for this sender ID already exists.' });
 		}
 
 		const requestRow = await SenderIdRequest.create({
@@ -103,9 +105,48 @@ const listPendingSenderIdRequests = async (req, res) => {
 	}
 };
 
+const listApprovedCompanySenderIds = async (req, res) => {
+	try {
+		const companyId = Number(req.companyContext?.companyId || req.auth?.activeCompanyId);
+		if (!companyId) return res.status(400).json({ message: 'Active company is required.' });
+		const rows = await CompanySenderId.findAll({
+			where: { companyId, status: 'approved', isActive: true },
+			attributes: ['id', 'senderId', 'status', 'isActive', 'createdAt'],
+			order: [['createdAt', 'ASC']],
+		});
+		return res.json({ data: rows });
+	} catch (error) {
+		console.error('listApprovedCompanySenderIds error:', error);
+		return res.status(500).json({ message: 'Failed to load approved sender IDs' });
+	}
+};
+
+const listAllSenderIdRequests = async (req, res) => {
+	try {
+		const rows = await SenderIdRequest.findAll({
+			include: [
+				{ model: Company, as: 'company', attributes: ['id', 'name', 'slug'] },
+				{ model: User, as: 'requester', attributes: ['id', 'name', 'email', 'phoneNumber'] },
+				{ model: User, as: 'reviewer', attributes: ['id', 'name', 'email'] },
+			],
+			order: [['createdAt', 'DESC']],
+		});
+		return res.json({ data: rows });
+	} catch (error) {
+		console.error('listAllSenderIdRequests error:', error);
+		return res.status(500).json({ message: 'Failed to load sender ID requests' });
+	}
+};
+
 const upsertApprovedSenderId = async ({ companyId, senderId, countryCodes, approvedById }) => {
-	const existing = await CompanySenderId.findOne({ where: { companyId, senderId } });
+	const normalizedSenderId = normalizeSenderId(senderId);
+	const existing = await CompanySenderId.findOne({ where: { senderId: normalizedSenderId } });
 	if (existing) {
+		if (Number(existing.companyId) !== Number(companyId)) {
+			const conflict = new Error('This sender ID belongs to another company.');
+			conflict.statusCode = 409;
+			throw conflict;
+		}
 		existing.status = 'approved';
 		existing.isActive = true;
 		existing.approvedById = approvedById;
@@ -117,7 +158,7 @@ const upsertApprovedSenderId = async ({ companyId, senderId, countryCodes, appro
 	try {
 		return await CompanySenderId.create({
 			companyId,
-			senderId,
+			senderId: normalizedSenderId,
 			countryCodes,
 			status: 'approved',
 			isActive: true,
@@ -132,7 +173,7 @@ const upsertApprovedSenderId = async ({ companyId, senderId, countryCodes, appro
 			 (company_id, sender_id, country_codes, status, is_active, approved_by_id, created_at, updated_at)
 			 VALUES (?, ?, ?, 'approved', 1, ?, ?, ?)` ,
 			{
-				replacements: [companyId, senderId, JSON.stringify(countryCodes || []), approvedById, now, now],
+				replacements: [companyId, normalizedSenderId, JSON.stringify(countryCodes || []), approvedById, now, now],
 			}
 		);
 		return result;
@@ -153,6 +194,14 @@ const reviewSenderIdRequest = async (req, res) => {
 		if (!row) return res.status(404).json({ message: 'Request not found' });
 		if (row.status !== 'pending') {
 			return res.status(400).json({ message: 'This request has already been reviewed.' });
+		}
+		if (decision === 'approved') {
+			const owner = await CompanySenderId.findOne({
+				where: { senderId: normalizeSenderId(row.senderId), status: 'approved', isActive: true },
+			});
+			if (owner && Number(owner.companyId) !== Number(row.companyId)) {
+				return res.status(409).json({ message: 'This sender ID belongs to another company.' });
+			}
 		}
 
 		row.status = decision;
@@ -187,8 +236,14 @@ const removeCompanySenderId = async (req, res) => {
 		}
 
 		const row = await CompanySenderId.findOne({ where: { companyId, senderId } });
-		if (!row) return res.status(404).json({ message: 'Sender ID not found for this company.' });
-
+		if (!row) {
+			const pending = await SenderIdRequest.findOne({
+				where: { companyId, senderId, requestedById: req.user.id, status: 'pending' },
+			});
+			if (!pending) return res.status(404).json({ message: 'Sender ID not found for this company.' });
+			await pending.destroy();
+			return res.json({ message: 'Pending sender ID request cancelled.' });
+		}
 		row.isActive = false;
 		row.status = 'rejected';
 		await row.save();
@@ -204,6 +259,8 @@ module.exports = {
 	createSenderIdRequest,
 	listMySenderIdRequests,
 	listPendingSenderIdRequests,
+	listAllSenderIdRequests,
 	reviewSenderIdRequest,
 	removeCompanySenderId,
+	listApprovedCompanySenderIds,
 };

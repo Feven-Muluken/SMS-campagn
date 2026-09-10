@@ -1,4 +1,4 @@
-const { Group, Contact, Message, User, GroupMember, sequelize } = require('../models');
+const { Group, Contact, Message, User, GroupMember, CompanyUser, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { sendSMS } = require('../services/smsService');
 const { personalizeMessage } = require('../utils/smsTemplate');
@@ -127,7 +127,7 @@ const membersDictToInputMembers = (membersDict) => {
   return inputMembers;
 };
 
-const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
+const resolveMembersToContacts = async ({ inputMembers, tx, createdById, companyId }) => {
   const invalid = [];
   const requestedContactIds = [];
   const requestedUserIds = [];
@@ -179,7 +179,10 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
 
   if (requestedContactIds.length > 0) {
     const uniqueContactIds = [...new Set(requestedContactIds)];
-    const found = await Contact.findAll({ where: { id: uniqueContactIds }, transaction: tx });
+    const found = await Contact.findAll({
+      where: { id: uniqueContactIds, ...(companyId ? { companyId } : {}) },
+      transaction: tx,
+    });
     const foundIds = new Set(found.map((c) => c.id));
     for (const id of uniqueContactIds) {
       if (!foundIds.has(id)) invalid.push({ member: { contactId: id }, reason: 'Contact not found' });
@@ -208,11 +211,12 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
       }
 
       const [contact] = await Contact.findOrCreate({
-        where: { phoneNumber: userE164 },
+        where: { phoneNumber: userE164, ...(companyId ? { companyId } : {}) },
         defaults: {
           name: user.name || userE164,
           phoneNumber: userE164,
           createdById,
+          companyId: companyId || null,
         },
         transaction: tx,
       });
@@ -228,11 +232,12 @@ const resolveMembersToContacts = async ({ inputMembers, tx, createdById }) => {
 
     for (const { phoneNumber, name } of uniquePhones.values()) {
       const [contact] = await Contact.findOrCreate({
-        where: { phoneNumber },
+        where: { phoneNumber, ...(companyId ? { companyId } : {}) },
         defaults: {
           name: name || phoneNumber,
           phoneNumber,
           createdById,
+          companyId: companyId || null,
         },
         transaction: tx,
       });
@@ -258,7 +263,13 @@ const getAllGroups = async (req, res) => {
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
     const ilike = Op.iLike || Op.like;
 
-    const ownerScope = req.user?.role === 'admin' ? {} : { ownerId: req.user.id };
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    const ownerIds = await companyOwnerIds(req);
+    const ownerScope = companyId
+      ? { companyId }
+      : req.user?.role === 'admin'
+        ? {}
+        : { ownerId: ownerIds ? { [Op.in]: ownerIds } : req.user.id };
     const where = search
       ? {
           ...ownerScope,
@@ -298,21 +309,24 @@ const getAllGroups = async (req, res) => {
 
 const createGroup = async (req, res) => {
   const { name, members } = req.body;
+  const companyId = Number(req.companyContext?.companyId || 0) || null;
   try {
     if (!name) return res.status(400).json({ message: 'Group name required' });
-    const existing = await Group.findOne({ where: { name, ownerId: req.user.id } });
+    const existing = await Group.findOne({
+      where: { name, ...(companyId ? { companyId } : { ownerId: req.user.id }) },
+    });
     if (existing) {
       return res.status(400).json({ message: 'Group name already exist' });
     }
 
     const tx = await sequelize.transaction();
     try {
-      const group = await Group.create({ name, ownerId: req.user.id }, { transaction: tx });
+      const group = await Group.create({ name, ownerId: req.user.id, companyId }, { transaction: tx });
 
       if (members && typeof members === 'object' && !Array.isArray(members)) {
         const inputMembers = membersDictToInputMembers(members);
         if (inputMembers.length > 0) {
-          const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id });
+          const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id, companyId });
           if (resolved.invalid.length > 0) {
             await tx.rollback();
             return res.status(400).json({ message: 'Invalid members', invalid: resolved.invalid });
@@ -330,7 +344,10 @@ const createGroup = async (req, res) => {
 
         const memberIds = normalized.ids;
         if (Array.isArray(memberIds) && memberIds.length > 0) {
-          const validContacts = await Contact.findAll({ where: { id: memberIds }, transaction: tx });
+          const validContacts = await Contact.findAll({
+            where: { id: memberIds, ...(companyId ? { companyId } : {}) },
+            transaction: tx,
+          });
           const foundIds = new Set(validContacts.map((c) => c.id));
           const missing = memberIds.filter((id) => !foundIds.has(id));
           if (missing.length > 0) {
@@ -396,8 +413,13 @@ const addContactToGroup = async (req, res) => {
       await tx.rollback();
       return res.status(404).json({ message: 'Group not found' });
     }
+    if (!(await canAccessGroup(req, group))) {
+      await tx.rollback();
+      return res.status(403).json({ message: 'You do not have permission to update this group' });
+    }
 
-    const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id });
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id, companyId });
     const invalid = resolved.invalid;
     const uniqueContacts = resolved.contacts;
 
@@ -464,6 +486,9 @@ const sendGroupSMS = async (req, res) => {
     });
 
     if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!(await canAccessGroup(req, group))) {
+      return res.status(403).json({ message: 'You do not have permission to message this group' });
+    }
 
     const members = group.members || [];
     if (members.length === 0) {
@@ -482,6 +507,7 @@ const sendGroupSMS = async (req, res) => {
       try {
         const { response, providerMessageId } = await sendSMS(member.phoneNumber, personalized, { senderId: effectiveSenderId });
         await Message.create({
+          companyId: group.companyId || req.companyContext?.companyId || null,
           campaignId: null,
           groupId: group.id,
           recipientType: 'Contact',
@@ -496,6 +522,7 @@ const sendGroupSMS = async (req, res) => {
         successCount += 1;
       } catch (error) {
         await Message.create({
+          companyId: group.companyId || req.companyContext?.companyId || null,
           campaignId: null,
           groupId: group.id,
           recipientType: 'Contact',
@@ -516,6 +543,44 @@ const sendGroupSMS = async (req, res) => {
   }
 };
 
+const companyOwnerIds = async (req) => {
+  const companyId = Number(req.companyContext?.companyId || 0) || null;
+  if (!companyId) return null;
+  const memberships = await CompanyUser.findAll({
+    where: { companyId },
+    attributes: ['userId'],
+    raw: true,
+  });
+  return memberships.map((membership) => membership.userId);
+};
+
+const canAccessGroup = async (req, group) => {
+  if (req.user?.role === 'admin') return true;
+  const companyId = Number(req.companyContext?.companyId || 0) || null;
+  if (companyId && group.companyId) return Number(group.companyId) === companyId;
+  const ownerIds = await companyOwnerIds(req);
+  return ownerIds ? ownerIds.includes(group.ownerId) : group.ownerId === req.user?.id;
+};
+
+const getGroupDeliveries = async (req, res) => {
+  try {
+    const group = await Group.findByPk(req.params.groupId);
+    if (!group) return res.status(404).json({ message: 'Group not found' });
+    if (!(await canAccessGroup(req, group))) {
+      return res.status(403).json({ message: 'You do not have permission to view this group' });
+    }
+    const rows = await Message.findAll({
+      where: { groupId: group.id },
+      order: [['createdAt', 'DESC']],
+      limit: 500,
+    });
+    return res.json({ data: rows });
+  } catch (error) {
+    console.error('Group deliveries error:', error);
+    return res.status(500).json({ message: 'Failed to load group deliveries' });
+  }
+};
+
 const updateGroup = async (req, res) => {
   const body = req.body || {};
   const { name, members } = body;
@@ -533,7 +598,7 @@ const updateGroup = async (req, res) => {
       message: 'Group not found' 
     });
 
-    if (req.user.role !== 'admin' && group.ownerId !== req.user.id) {
+    if (!(await canAccessGroup(req, group))) {
       return res.status(403).json({ 
         message: 'You do not have permission to update this group'
       });
@@ -563,7 +628,8 @@ const updateGroup = async (req, res) => {
         if (inputMembers.length === 0) {
           await group.setMembers([], { transaction: tx });
         } else {
-          const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id });
+          const companyId = Number(req.companyContext?.companyId || 0) || null;
+          const resolved = await resolveMembersToContacts({ inputMembers, tx, createdById: req.user.id, companyId });
           if (resolved.invalid.length > 0) {
             await tx.rollback();
             return res.status(400).json({ message: 'Invalid members', invalid: resolved.invalid });
@@ -584,7 +650,11 @@ const updateGroup = async (req, res) => {
         const memberIds = normalized.ids;
         if (memberIds !== undefined) {
           if (memberIds.length > 0) {
-            const validContacts = await Contact.findAll({ where: { id: memberIds }, transaction: tx });
+            const companyId = Number(req.companyContext?.companyId || 0) || null;
+            const validContacts = await Contact.findAll({
+              where: { id: memberIds, ...(companyId ? { companyId } : {}) },
+              transaction: tx,
+            });
             const foundIds = new Set(validContacts.map((c) => c.id));
             const missing = memberIds.filter((id) => !foundIds.has(id));
             if (missing.length > 0) {
@@ -630,7 +700,7 @@ const deleteGroup = async (req, res) => {
     const group = await Group.findByPk(req.params.groupId);
     if (!group) return res.status(404).json({ message: 'Group not found' });
 
-    if (req.user.role !== 'admin' && group.ownerId !== req.user.id) {
+    if (!(await canAccessGroup(req, group))) {
       return res.status(403).json({ message: 'You do not have permission to delete this group' });
     }
 
@@ -643,4 +713,4 @@ const deleteGroup = async (req, res) => {
 };
 
 
-module.exports = { getAllGroups, createGroup, addContactToGroup, sendGroupSMS, updateGroup, deleteGroup };
+module.exports = { getAllGroups, createGroup, addContactToGroup, sendGroupSMS, getGroupDeliveries, updateGroup, deleteGroup };

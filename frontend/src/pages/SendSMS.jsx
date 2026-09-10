@@ -38,12 +38,24 @@ const SendSMS = () => {
     const fetchData = async () => {
       try {
         const listParams = { pageSize: 500 };
-        const [campaignsRes, groupsRes, contactsRes] = await Promise.all([
-          axios.get('/campaign', { params: listParams }),
+        const fetchAllCampaigns = async () => {
+          const result = [];
+          let page = 1;
+          while (true) {
+            const response = await axios.get('/campaign', { params: { ...listParams, page } });
+            const batch = toArray(response.data);
+            result.push(...batch);
+            if (page >= (response.data?.totalPages || 1)) break;
+            page += 1;
+          }
+          return result;
+        };
+        const [allCampaigns, groupsRes, contactsRes] = await Promise.all([
+          fetchAllCampaigns(),
           axios.get('/groups', { params: listParams }),
           axios.get('/contacts', { params: listParams }),
         ]);
-        setCampaigns(toArray(campaignsRes.data));
+        setCampaigns(allCampaigns);
         setGroups(toArray(groupsRes.data));
         setContacts(toArray(contactsRes.data));
       } catch (error) {
@@ -323,31 +335,29 @@ const SendSMS = () => {
                   <FiMessageCircle className="inline w-4 h-4 mr-1" />
                   Select Campaign *
                 </label>
-                <select
-                  name="campaignID"
-                  value={form.campaignID}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
-                  style={{
-                    borderColor: '#D1D5DB',
-                    color: '#0F0D1D'
-                  }}
-                  required
-                >
-                  <option value="">Select a campaign to send</option>
-                  {campaigns.length === 0 ? null : (
-                    campaigns.map((campaign) => (
-                      <option
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-1.5 space-y-1.5">
+                  {campaigns.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-gray-500">No campaigns available.</p>
+                  ) : campaigns.map((campaign) => {
+                    const selected = String(form.campaignID) === String(campaign.id);
+                    return (
+                      <button
                         key={campaign.id}
-                        value={campaign.id}
-                        disabled={campaign.status === 'sent'}
+                        type="button"
+                        onClick={() => setForm((previous) => ({ ...previous, campaignID: String(campaign.id) }))}
+                        className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${selected
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
                       >
-                        {campaign.name} - {campaign.recipientLinks?.length || 0} recipients
-                        {campaign.status === 'sent' ? ' (sent)' : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
+                        <span className="block truncate text-sm font-medium text-gray-900">{campaign.name}</span>
+                        <span className="block text-xs text-gray-500">
+                          {campaign.status || 'draft'} · {campaign.recipientLinks?.length || 0} recipients
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
                 {form.campaignID && (
                   <div className="mt-4 p-4 rounded-lg" style={{ backgroundColor: '#FEE2E2' }}>
                     <p className="text-sm text-gray-700 mb-2">
@@ -368,24 +378,27 @@ const SendSMS = () => {
                   <FiUsers className="inline w-4 h-4 mr-1" />
                   Select Group *
                 </label>
-                <select
-                  name="groupId"
-                  value={form.groupId}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-transparent border-0 border-b-2 text-sm focus:outline-none transition-colors pb-2"
-                  style={{
-                    borderColor: '#D1D5DB',
-                    color: '#0F0D1D'
-                  }}
-                  required
-                >
-                  <option value="">Select a group</option>
-                  {groups.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name} ({group.members?.length || 0} members)
-                    </option>
-                  ))}
-        </select>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-1.5 space-y-1.5">
+                  {groups.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-gray-500">No groups available.</p>
+                  ) : groups.map((group) => {
+                    const selected = String(form.groupId) === String(group.id);
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setForm((previous) => ({ ...previous, groupId: String(group.id) }))}
+                        className={`w-full rounded-md border px-3 py-2 text-left transition-colors ${selected
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <span className="block truncate text-sm font-medium text-gray-900">{group.name}</span>
+                        <span className="block text-xs text-gray-500">{group.members?.length || 0} members</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -421,15 +434,18 @@ const SendSMS = () => {
                   <FiUser className="inline w-4 h-4 mr-1" />
                   Select Contacts * ({form.contactIds.length} selected)
                 </label>
-                <div className="max-h-60 overflow-y-auto border-2 rounded-lg p-4" style={{ borderColor: '#D1D5DB' }}>
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-3 pr-1.5 space-y-1.5">
                   {contacts.length === 0 ? (
-                    <p className="text-gray-500 text-sm">No contacts available</p>
+                    <p className="px-3 py-4 text-sm text-gray-500">No contacts available.</p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       {contacts.map((contact) => (
                         <label
                           key={contact.id}
-                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
+                          className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 transition-colors ${form.contactIds.includes(String(contact.id))
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                          }`}
                         >
                           <input
                             type="checkbox"

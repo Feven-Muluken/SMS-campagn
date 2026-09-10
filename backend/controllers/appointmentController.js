@@ -25,7 +25,8 @@ const getAllAppointments = async (req, res) => {
     const sortDir = req.query.sortDir === 'ASC' ? 'ASC' : 'DESC';
     const ilike = Op.iLike || Op.like;
 
-    const baseWhere = req.user?.role === 'admin' ? {} : { createdById: req.user.id };
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    const baseWhere = companyId ? { companyId } : req.user?.role === 'admin' ? {} : { createdById: req.user.id };
 
     const where = {
       ...baseWhere,
@@ -43,7 +44,10 @@ const getAllAppointments = async (req, res) => {
 
     const { rows, count } = await Appointment.findAndCountAll({
       where,
-      include: [{ model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] }],
+      include: [
+        { model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] },
+        { association: 'creator', attributes: ['name', 'email'] },
+      ],
       order: [[sortBy, sortDir]],
       limit: pageSize,
       offset: (page - 1) * pageSize,
@@ -65,11 +69,18 @@ const getAllAppointments = async (req, res) => {
 const getAppointmentById = async (req, res) => {
   try {
     const appointment = await Appointment.findByPk(req.params.id, {
-      include: [{ model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] }],
+      include: [
+        { model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] },
+        { association: 'creator', attributes: ['name', 'email'] },
+      ],
     });
     if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
 
-    if (req.user.role !== 'admin' && appointment.createdById !== req.user.id) {
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    if (companyId && Number(appointment.companyId || 0) !== companyId) {
+      return res.status(403).json({ message: 'You do not have permission to view this appointment' });
+    }
+    if (!companyId && req.user.role !== 'admin' && appointment.createdById !== req.user.id) {
       return res.status(403).json({ message: 'You do not have permission to view this appointment' });
     }
 
@@ -99,6 +110,9 @@ const createAppointment = async (req, res) => {
 
   const when = parseDate(scheduledAt);
   if (!when) return res.status(400).json({ message: 'scheduledAt must be a valid datetime' });
+  if (when <= new Date()) {
+    return res.status(400).json({ message: 'scheduledAt must be in the future' });
+  }
 
   const tx = await sequelize.transaction();
   try {
@@ -111,6 +125,11 @@ const createAppointment = async (req, res) => {
       if (!contact) {
         await tx.rollback();
         return res.status(400).json({ message: 'contactId is invalid' });
+      }
+      const activeCompanyId = Number(req.companyContext?.companyId || 0) || null;
+      if (activeCompanyId && Number(contact.companyId || 0) !== activeCompanyId) {
+        await tx.rollback();
+        return res.status(400).json({ message: 'contactId is invalid for this company' });
       }
       resolvedPhone = contact.phoneNumber;
       resolvedCustomerName = resolvedCustomerName || contact.name;
@@ -144,6 +163,7 @@ const createAppointment = async (req, res) => {
         notes: notes || null,
         contactId: resolvedContactId,
         createdById: req.user.id,
+        companyId: Number(req.companyContext?.companyId || 0) || null,
         reminderMinutesBefore: reminderMinutesBefore ?? null,
         followUpMinutesAfter: followUpMinutesAfter ?? null,
       },
@@ -158,7 +178,10 @@ const createAppointment = async (req, res) => {
     }
 
     const populated = await Appointment.findByPk(appointment.id, {
-      include: [{ model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] }],
+      include: [
+        { model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] },
+        { association: 'creator', attributes: ['name', 'email'] },
+      ],
     });
 
     res.status(201).json(populated);
@@ -175,7 +198,9 @@ const updateAppointment = async (req, res) => {
     const appointment = await Appointment.findByPk(req.params.id);
     if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
 
-    if (req.user.role !== 'admin' && appointment.createdById !== req.user.id) {
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    if ((companyId && Number(appointment.companyId || 0) !== companyId) ||
+        (!companyId && req.user.role !== 'admin' && appointment.createdById !== req.user.id)) {
       return res.status(403).json({ message: 'You do not have permission to update this appointment' });
     }
 
@@ -235,7 +260,10 @@ const updateAppointment = async (req, res) => {
     }
 
     const populated = await Appointment.findByPk(appointment.id, {
-      include: [{ model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] }],
+      include: [
+        { model: Contact, as: 'contact', attributes: ['id', 'name', 'phoneNumber'] },
+        { association: 'creator', attributes: ['name', 'email'] },
+      ],
     });
 
     res.json(populated);
@@ -250,7 +278,9 @@ const cancelAppointment = async (req, res) => {
     const appointment = await Appointment.findByPk(req.params.id);
     if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
 
-    if (req.user.role !== 'admin' && appointment.createdById !== req.user.id) {
+    const companyId = Number(req.companyContext?.companyId || 0) || null;
+    if ((companyId && Number(appointment.companyId || 0) !== companyId) ||
+        (!companyId && req.user.role !== 'admin' && appointment.createdById !== req.user.id)) {
       return res.status(403).json({ message: 'You do not have permission to cancel this appointment' });
     }
 

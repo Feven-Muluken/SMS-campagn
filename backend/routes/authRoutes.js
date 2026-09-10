@@ -1,7 +1,19 @@
 const express = require('express');
 const router = express.Router();
 
-const { register, login, switchCompany, forgotPassword, resetPassword } = require('../controllers/authController');
+const { register, login, refresh, switchCompany, forgotPassword, verifyPasswordResetOtp, resetPassword } = require('../controllers/authController');
+const { rateLimit } = require('../middleware/rateLimit');
+
+const loginLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  key: (req) => `login:${req.ip}:${String(req.body?.email || '').trim().toLowerCase()}`,
+});
+const passwordResetLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  key: (req) => `password-reset:${req.ip}`,
+});
 const { authMiddleware, checkRole } = require('../middleware/authMiddleware');
 
 router.get('/', (req, res) => {
@@ -10,10 +22,12 @@ router.get('/', (req, res) => {
 
 router.post('/admin/register', authMiddleware, checkRole(['admin']),  register);
 
-router.post('/login', login);
+router.post('/login', loginLimit, login);
+router.post('/refresh', refresh);
 router.post('/switch-company', authMiddleware, switchCompany);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', passwordResetLimit, forgotPassword);
+router.post('/verify-reset-otp', passwordResetLimit, verifyPasswordResetOtp);
+router.post('/reset-password', passwordResetLimit, resetPassword);
 
 module.exports = router;
 // eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwicm9sZSI6ImFkbWluIiwiZW1haWwiOiJhZGFAZXhhbXBsZS5jb20iLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwiaWF0IjoxNzY3MTc2NzYyLCJleHAiOjE3Njc3ODE1NjJ9.wRTSebyT9meghh8L9KuzZ-CH9-BsE4jKoo1wdSm_8zU

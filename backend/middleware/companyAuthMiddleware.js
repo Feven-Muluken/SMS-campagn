@@ -3,10 +3,17 @@ const { Company, CompanyUser, CompanyPermission } = require('../models');
 const ALL_COMPANY_PERMISSIONS = [
 	'dashboard.view',
 	'campaign.view',
+	'campaign.create',
+	'campaign.manage',
+	'campaign.schedule',
 	'campaign.send',
+	'group.send',
+	'contact.send',
 	'contact.view',
+	'contact.create',
 	'contact.manage',
 	'group.view',
+	'group.create',
 	'group.manage',
 	'user.manage',
 	'sms.send',
@@ -15,9 +22,17 @@ const ALL_COMPANY_PERMISSIONS = [
 	'appointment.manage',
 	'inbox.view',
 	'inbox.reply',
+	'inbox.assign',
+	'inbox.status',
 	'geo.send',
 	'billing.send',
 	'company.manage',
+];
+
+const REQUIRED_COMPANY_PERMISSIONS = [
+	'dashboard.view', 'campaign.view', 'campaign.create', 'campaign.schedule',
+	'contact.view', 'contact.create', 'group.view', 'group.create',
+	'inbox.view', 'inbox.reply',
 ];
 
 const ROLE_PERMISSION_TEMPLATES = {
@@ -25,7 +40,10 @@ const ROLE_PERMISSION_TEMPLATES = {
 	staff: [
 		'dashboard.view',
 		'campaign.view',
+		'campaign.manage',
 		'campaign.send',
+		'group.send',
+		'contact.send',
 		'contact.view',
 		'contact.manage',
 		'group.view',
@@ -36,6 +54,7 @@ const ROLE_PERMISSION_TEMPLATES = {
 		'appointment.manage',
 		'inbox.view',
 		'inbox.reply',
+		'inbox.status',
 		'geo.send',
 		'billing.send',
 	],
@@ -55,9 +74,9 @@ const sanitizePermissionList = (permissions = []) => {
 
 const getPermissionSet = ({ role = 'viewer', membershipPermissions = [], companyPermissions = [], companyLegacyPermissions = [] }) => {
 	const roleTemplate = ROLE_PERMISSION_TEMPLATES[String(role || 'viewer').toLowerCase()] || ROLE_PERMISSION_TEMPLATES.viewer;
-	const effectiveRole = membershipPermissions.length ? sanitizePermissionList(membershipPermissions) : roleTemplate;
-	const enabledSet = new Set([...companyPermissions, ...companyLegacyPermissions]);
-	return effectiveRole.filter((p) => enabledSet.has(p));
+	const effectiveRole = sanitizePermissionList(membershipPermissions);
+	const enabledSet = new Set([...REQUIRED_COMPANY_PERMISSIONS, ...companyPermissions, ...companyLegacyPermissions]);
+	return Array.from(new Set(effectiveRole.filter((p) => enabledSet.has(p))));
 };
 
 const requireCompanyMembership = async (req, res, next) => {
@@ -137,8 +156,6 @@ const requireCompanyPermission = (requiredPermission) => (req, res, next) => {
 	if (!permissions.includes(requiredPermission)) {
 		return res.status(403).json({
 			message: 'Permission denied for this company action',
-			requiredPermission,
-			activeCompanyId: req.companyContext.companyId,
 		});
 	}
 	next();

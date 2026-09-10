@@ -1,3 +1,3 @@
-const { sendSMS, extractProviderMessageId, describeActiveProvider } = require('./sms/smsRouter');
+const { sendSMS, extractProviderMessageId, describeActiveProvider, getDefaultProvider } = require('./sms/smsRouter');
 
-module.exports = { sendSMS, extractProviderMessageId, describeActiveProvider };
+module.exports = { sendSMS, extractProviderMessageId, describeActiveProvider, getDefaultProvider };

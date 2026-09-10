@@ -21,7 +21,7 @@ CampaignDispatch.init(
       field: 'scheduled_for',
     },
     status: {
-      type: DataTypes.ENUM('pending', 'sent', 'failed'),
+      type: DataTypes.ENUM('pending', 'sent', 'partial', 'failed'),
       allowNull: false,
       defaultValue: 'pending',
     },

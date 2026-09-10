@@ -6,6 +6,7 @@ const sameUser = (a, b) => Number(a) === Number(b);
 
 const contactInclude = [
   { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
+  { association: 'creator', attributes: ['name', 'email'] },
 ];
 
 const normalizeTagsInput = (tags) => {
@@ -83,7 +84,9 @@ const createContact = async (req, res) => {
 
       if (groups) {
         const groupIds = Array.isArray(groups) ? groups : [groups];
-        const validGroups = await Group.findAll({ where: { id: groupIds } });
+        const validGroups = await Group.findAll({
+          where: { id: groupIds, ...(activeCompanyId ? { companyId: activeCompanyId } : {}) },
+        });
         if (validGroups.length !== groupIds.length) {
           await tx.rollback();
           return res.status(400).json({ message: 'One or more group ids are invalid' });
@@ -108,6 +111,7 @@ const createContact = async (req, res) => {
         include: [
           { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
           { model: ContactLocation, as: 'location' },
+          { association: 'creator', attributes: ['name', 'email'] },
         ],
       });
 
@@ -179,6 +183,7 @@ const getAllContacts = async (req, res) => {
       include: [
         { model: Group, as: 'groups', through: { attributes: [] }, attributes: ['id', 'name'] },
         { model: ContactLocation, as: 'location' },
+        { association: 'creator', attributes: ['name', 'email'] },
       ],
       order: [[sortBy, sortDir]],
       limit: pageSize,
@@ -233,7 +238,11 @@ const updateContact = async (req, res) => {
 
     if (nextPhone && nextPhone !== contact.phoneNumber) {
       const existing = await Contact.findOne({
-        where: { phoneNumber: nextPhone, id: { [Op.ne]: contact.id } },
+        where: {
+          phoneNumber: nextPhone,
+          id: { [Op.ne]: contact.id },
+          ...(activeCompanyId ? { companyId: activeCompanyId } : {}),
+        },
       });
       if (existing) {
         if (req.user?.role !== 'admin' && !sameUser(existing.createdById, req.user.id)) {
@@ -260,7 +269,9 @@ const updateContact = async (req, res) => {
           await contact.setGroups([], { transaction: tx });
         } else {
           const groupIds = Array.isArray(groups) ? groups : [groups];
-          const validGroups = await Group.findAll({ where: { id: groupIds } });
+          const validGroups = await Group.findAll({
+            where: { id: groupIds, ...(activeCompanyId ? { companyId: activeCompanyId } : {}) },
+          });
           if (validGroups.length !== groupIds.length) {
             await tx.rollback();
             return res.status(400).json({ message: 'One or more group ids are invalid' });

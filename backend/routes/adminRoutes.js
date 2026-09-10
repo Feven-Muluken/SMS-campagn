@@ -12,11 +12,12 @@ const {
   updateCompanyPermissions,
   createCompanyUser,
 } = require('../controllers/adminController');
+const { listCompanyUsers } = require('../controllers/companyManagementController');
 const campaign = require('./campaignRoutes')
 const group = require('./groupRoutes');
 
-router.get('/stats', authMiddleware, checkRole(['admin']), getDashboardStats);
-router.get('/recent-activity', authMiddleware, checkRole(['admin']), getRecentActivity);
+router.get('/stats', authMiddleware, checkRole(['admin', 'staff', 'viewer']), getDashboardStats);
+router.get('/recent-activity', authMiddleware, checkRole(['admin', 'staff', 'viewer']), getRecentActivity);
 router.get('/users', authMiddleware, checkRole(['admin']), getAllUsers);
 router.put('/users/:id', authMiddleware, checkRole(['admin']), updateUser);
 router.delete('/users/:id', authMiddleware, checkRole(['admin']), deleteUser);
@@ -24,6 +25,7 @@ router.get('/companies', authMiddleware, checkRole(['admin']), getCompanies);
 router.post('/companies', authMiddleware, checkRole(['admin']), createCompany);
 router.put('/companies/:id/permissions', authMiddleware, checkRole(['admin']), updateCompanyPermissions);
 router.post('/companies/:id/users', authMiddleware, checkRole(['admin']), createCompanyUser);
+router.get('/companies/:id/users', authMiddleware, checkRole(['admin']), listCompanyUsers);
 router.use('/campaign', authMiddleware, checkRole(['admin']), campaign);
 router.use('/group', authMiddleware, checkRole(['admin']), group);
 

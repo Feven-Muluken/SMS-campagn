@@ -6,6 +6,13 @@ class User extends Model {
   async matchPassword(enteredPassword) {
     return bcrypt.compare(enteredPassword, this.password);
   }
+
+  toJSON() {
+    const values = { ...this.get() };
+    delete values.password;
+    delete values.passwordResetNonce;
+    return values;
+  }
 }
 
 User.init({
@@ -42,6 +49,21 @@ User.init({
     allowNull: false,
     defaultValue: 'platform',
     field: 'account_scope',
+  },
+  permissions: {
+    type: DataTypes.JSON,
+    allowNull: false,
+    defaultValue: [],
+  },
+  createdById: {
+    type: DataTypes.INTEGER.UNSIGNED,
+    allowNull: true,
+    field: 'created_by_id',
+  },
+  passwordResetNonce: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    field: 'password_reset_nonce',
   },
 }, {
   sequelize,
