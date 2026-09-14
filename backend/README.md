@@ -9,7 +9,7 @@ Create a `.env` file in `backend` with:
 ```env
 PORT=5000
 JWT_SECRET=your_jwt_secret
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=https://frontend-production-05f5.up.railway.app
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

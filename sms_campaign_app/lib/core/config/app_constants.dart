@@ -1,11 +1,11 @@
 /// Application-wide constants: API defaults, storage keys and shared patterns.
 abstract final class AppConstants {
   /// Override at build time with `--dart-define=API_BASE_URL=https://api.example.com`.
-  /// The reserved default prevents release builds from silently targeting a
-  /// developer's private network; users may still configure a server at login.
+  /// Defaults to the production Railway API; development and staging builds
+  /// can override it with --dart-define and users may configure it at login.
   static const String defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api.example.invalid',
+    defaultValue: 'https://smsbackend-production-fc8c.up.railway.app',
   );
 
   // SharedPreferences keys.

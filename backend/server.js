@@ -19,7 +19,10 @@ app.use(helmet());
 app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '1mb' }));
 
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+const defaultCorsOrigin = process.env.NODE_ENV === 'production'
+  ? 'https://frontend-production-05f5.up.railway.app'
+  : 'http://localhost:5173';
+const allowedOrigins = (process.env.CORS_ORIGIN || defaultCorsOrigin)
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);

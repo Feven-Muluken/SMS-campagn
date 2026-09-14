@@ -5,7 +5,7 @@ import '../../data/models/user.dart';
 import '../config/app_constants.dart';
 import 'token_store.dart';
 
-/// Facade over [SharedPreferences] for profile/server-URL data and a secure
+/// Facade over [SharedPreferences] for profile data and a secure
 /// [TokenStore] (Android Keystore / iOS Keychain) for the JWT.
 ///
 /// The token is cached in memory at [init] so synchronous consumers (the Dio
@@ -50,9 +50,9 @@ class StorageService {
       (token != null && token!.isNotEmpty) ||
       (refreshToken != null && refreshToken!.isNotEmpty);
 
-  String get serverUrl =>
-      _prefs.getString(AppConstants.keyServerUrl) ??
-      AppConstants.defaultBaseUrl;
+  // The API address is application configuration, not user input. Ignoring the
+  // legacy preference upgrades devices that saved a LAN IP or localhost.
+  String get serverUrl => AppConstants.defaultBaseUrl;
 
   Future<void> setServerUrl(String url) => _prefs.setString(
     AppConstants.keyServerUrl,
