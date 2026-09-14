@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const defaultApiBaseUrl = import.meta.env.PROD
-  ? 'https://smsbackend-production-fc8c.up.railway.app'
+  ? 'https://afroel-sms-api.onrender.com'
   : 'http://localhost:5000';
 
 const instance = axios.create({

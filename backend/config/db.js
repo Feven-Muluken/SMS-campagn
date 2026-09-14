@@ -1,4 +1,15 @@
 const { Sequelize } = require('sequelize');
+const fs = require('fs');
+
+const readSslCa = () => {
+  if (process.env.DB_SSL_CA_PATH) {
+    return fs.readFileSync(process.env.DB_SSL_CA_PATH, 'utf8');
+  }
+  return String(process.env.DB_SSL_CA || '').replace(/\\n/g, '\n').trim() || undefined;
+};
+
+const sslCa = readSslCa();
+const sslEnabled = String(process.env.DB_SSL || '').toLowerCase() === 'true' || Boolean(sslCa);
 
 // Central Sequelize instance shared by all models
 const sequelize = new Sequelize({
@@ -18,6 +29,12 @@ const sequelize = new Sequelize({
   },
   dialectOptions: {
     connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 15000,
+    ...(sslEnabled ? {
+      ssl: {
+        ...(sslCa ? { ca: sslCa } : {}),
+        rejectUnauthorized: String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').toLowerCase() !== 'false',
+      },
+    } : {}),
   },
 });
 
