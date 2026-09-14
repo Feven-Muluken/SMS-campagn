@@ -14,7 +14,7 @@
     "db:migrate:status": "node scripts/migrationStatus.js",
     "bootstrap:admin": "node scripts/bootstrapAdmin.js",
     "dev": "nodemon server.js",
-    "start": "nodemon server.js"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
