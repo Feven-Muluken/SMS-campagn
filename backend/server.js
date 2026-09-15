@@ -1,6 +1,5 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const cors = require('cors');
 const helmet = require('helmet');
 
 dotenv.config();
@@ -19,41 +18,24 @@ app.use(helmet());
 app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '1mb' }));
 
-const defaultCorsOrigin = process.env.NODE_ENV === 'production'
-  ? 'https://frontend-production-05f5.up.railway.app'
-  : 'http://localhost:5173';
-const allowedOrigins = (process.env.CORS_ORIGIN || defaultCorsOrigin)
+const allowedOrigins = String(process.env.CORS_ORIGIN || '')
   .split(',')
-  .map((o) => o.trim())
+  .map((origin) => origin.trim())
   .filter(Boolean);
 
-const isDevelopmentOrigin = (origin) => {
-  if (process.env.NODE_ENV === 'production') return false;
-  try {
-    const { protocol, hostname } = new URL(origin);
-    return (
-      ['http:', 'https:'].includes(protocol) &&
-      ['localhost', '127.0.0.1', '192.168.100.140'].includes(hostname)
-    );
-  } catch {
-    return false;
-  }
-};
+app.use((req, res, next) => {
+  const origin = req.get('Origin');
+  if (!origin || !allowedOrigins.includes(origin)) return next();
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || isDevelopmentOrigin(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('Origin is not allowed by CORS'));
-    },
-    credentials: true,
-    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-Company-Id'],
-  })
-);
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type,X-Company-Id');
+  res.setHeader('Vary', 'Origin');
+
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  return next();
+});
 
 app.get('/', (req, res) => {
   res.send('MessageHub API is running ... ');

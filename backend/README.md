@@ -9,7 +9,6 @@ Create a `.env` file in `backend` with:
 ```env
 PORT=5000
 JWT_SECRET=your_jwt_secret
-FRONTEND_URL=https://frontend-production-05f5.up.railway.app
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -47,8 +46,9 @@ The command refuses to overwrite an existing user.
 ## Production startup
 
 Use `NODE_ENV=production`, HTTPS, strong unique JWT/webhook/location secrets,
-an explicit HTTPS `CORS_ORIGIN`, and a non-empty database password. Production
-configuration is validated before the database connection is opened.
+and a non-empty database password. Production configuration is validated before
+the database connection is opened. The API does not require a frontend URL or
+`CORS_ORIGIN` and can be deployed independently.
 
 Schema maintenance does not run automatically in production. Back up MySQL,
 then run migrations as a separate deployment step:
@@ -92,7 +92,6 @@ After this, `POST /auth/forgot-password` sends the reset link to the target emai
 
 - The Flutter app can test and save the API address from its login/settings screen. Use `10.0.2.2` for an Android emulator, a LAN IP for a physical device during development, and an HTTPS public hostname in production.
 - `GET /health` is intentionally public and returns only service/provider routing status; it never returns credentials.
-- Set `CORS_ORIGIN` to a comma-separated allowlist of trusted web origins.
 - Set `TRUST_PROXY` only to the reverse proxy addresses you control. The default `loopback` is safe for a same-host proxy.
 - Provider credentials belong only in backend environment variables. Never include Africa's Talking or MobileSMS.io tokens in the Flutter build.
 

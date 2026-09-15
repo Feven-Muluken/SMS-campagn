@@ -4,9 +4,6 @@ const PLACEHOLDER_PATTERNS = [
   /^example/i,
 ];
 
-const DEFAULT_PRODUCTION_FRONTEND_URL =
-  'https://frontend-production-05f5.up.railway.app';
-
 const isPlaceholder = (value) => {
   const normalized = String(value || '').trim();
   return !normalized || PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(normalized));
@@ -25,16 +22,6 @@ const validateProductionConfig = () => {
     errors.push('JWT_REFRESH_SECRET must be a different non-placeholder value of at least 32 characters');
   }
 
-  const corsOrigins = String(
-    process.env.CORS_ORIGIN || DEFAULT_PRODUCTION_FRONTEND_URL,
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (!corsOrigins.length || corsOrigins.some((origin) => !origin.startsWith('https://'))) {
-    errors.push('CORS_ORIGIN must contain only explicit HTTPS origins');
-  }
-
   if (String(process.env.SMS_WEBHOOK_SECRET || '').length < 24) {
     errors.push('SMS_WEBHOOK_SECRET must be at least 24 characters');
   }
@@ -45,13 +32,6 @@ const validateProductionConfig = () => {
 
   if (!String(process.env.DB_PASSWORD || '')) {
     errors.push('DB_PASSWORD must not be empty');
-  }
-
-  const frontendUrl = String(
-    process.env.FRONTEND_URL || DEFAULT_PRODUCTION_FRONTEND_URL,
-  );
-  if (!frontendUrl.startsWith('https://')) {
-    errors.push('FRONTEND_URL must be an explicit HTTPS URL');
   }
 
   const smtpRequired = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'];

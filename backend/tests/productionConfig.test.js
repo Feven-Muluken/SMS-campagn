@@ -7,11 +7,9 @@ const productionEnv = {
   NODE_ENV: 'production',
   JWT_SECRET: 'a-secure-production-secret-with-32-chars',
   JWT_REFRESH_SECRET: 'a-different-refresh-secret-with-32-characters',
-  CORS_ORIGIN: 'https://app.example.test',
   SMS_WEBHOOK_SECRET: 'webhook-secret-at-least-24-characters',
   LIVE_LOCATION_INGEST_KEY: 'location-secret-at-least-24-characters',
   DB_PASSWORD: 'database-password',
-  FRONTEND_URL: 'https://app.example.test',
   SMS_PROVIDER: 'africastalking',
   SMS_PROVIDER_USER_SELECTABLE: 'true',
   AT_USERNAME: 'production-account',
@@ -40,10 +38,10 @@ test('production configuration accepts secure explicit values', () => {
   withEnv(productionEnv, () => assert.doesNotThrow(validateProductionConfig));
 });
 
-test('production configuration rejects placeholders and insecure origins', () => {
+test('production configuration rejects placeholder secrets', () => {
   withEnv(
-    { ...productionEnv, JWT_SECRET: 'change-me', CORS_ORIGIN: 'http://localhost:5173' },
-    () => assert.throws(validateProductionConfig, /JWT_SECRET.*CORS_ORIGIN/s)
+    { ...productionEnv, JWT_SECRET: 'change-me' },
+    () => assert.throws(validateProductionConfig, /JWT_SECRET/)
   );
 });
 

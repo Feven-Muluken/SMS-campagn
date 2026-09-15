@@ -51,7 +51,6 @@ test.before(async () => {
   process.env.SMS_PROVIDER_USER_SELECTABLE = 'false';
   process.env.SMS_WEBHOOK_SECRET = 'integration-webhook-secret';
   process.env.SMTP_JSON_TRANSPORT = 'true';
-  process.env.FRONTEND_URL = 'https://app.example.test';
 
   models = require('../models');
   app = require('../server');
