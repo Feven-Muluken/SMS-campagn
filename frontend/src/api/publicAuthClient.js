@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const defaultApiBaseUrl = import.meta.env.PROD
-  ? 'https://smsbackend-production-fc8c.up.railway.app'
+  ? 'https://sms-campagn-backend.onrender.com'
   : 'http://localhost:5000';
 
 /**
