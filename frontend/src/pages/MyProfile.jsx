@@ -45,7 +45,7 @@ const MyProfile = () => {
     setLoadingRequests(true);
     try {
       if (isSuperAdmin) {
-        const res = await axios.get('/sender-id-requests/pending');
+        const res = await axios.get('/sender-id-requests/all');
         setPendingRequests(Array.isArray(res.data?.data) ? res.data.data : []);
       } else if (user?.activeCompanyId) {
         const res = await axios.get('/sender-id-requests/my');
@@ -235,8 +235,15 @@ const MyProfile = () => {
                           {isSuperAdmin && row.requester ? ` • Requested by ${row.requester.name || row.requester.email}` : ''}
                         </p>
                         {row.reason ? <p className="text-xs text-gray-600 mt-1">Reason: {row.reason}</p> : null}
+                        <p className="text-xs text-gray-500 mt-1">
+                          Status: <span className="capitalize">{row.status}</span>
+                          {row.reviewedBy
+                            ? ` • ${row.status === 'approved' ? 'Approved' : 'Rejected'} by ${row.reviewedBy.name || row.reviewedBy.email}`
+                            : ''}
+                          {row.reviewedAt ? ` on ${new Date(row.reviewedAt).toLocaleString()}` : ''}
+                        </p>
                       </div>
-                      {isSuperAdmin ? (
+                      {isSuperAdmin && row.status === 'pending' ? (
                         <div className="flex items-center gap-2">
                           <button
                             type="button"

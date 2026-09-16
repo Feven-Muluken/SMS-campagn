@@ -13,12 +13,27 @@ class SenderIdTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reviewDetails = request.reviewerName == null
+        ? null
+        : '${request.status == 'approved' ? 'Approved' : 'Rejected'} by '
+              '${request.reviewerName}'
+              '${request.reviewedAt == null ? '' : ' on ${Formatters.dateTime(request.reviewedAt!)}'}';
     return Card(
       child: ListTile(
         leading: const Icon(Icons.badge_outlined),
-        title: Text(request.senderId,
-            style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: Text('Requested ${Formatters.dateTime(request.requestedAt)}'),
+        title: Text(
+          request.senderId,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Requested ${Formatters.dateTime(request.requestedAt)}'),
+            if (request.reason?.isNotEmpty == true)
+              Text('Reason: ${request.reason}'),
+            if (reviewDetails != null) Text(reviewDetails),
+          ],
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
