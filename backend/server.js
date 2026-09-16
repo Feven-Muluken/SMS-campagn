@@ -20,11 +20,11 @@ app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIM
 
 const allowedOrigins = String(process.env.CORS_ORIGIN || '')
   .split(',')
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
   .filter(Boolean);
 
 app.use((req, res, next) => {
-  const origin = req.get('Origin');
+  const origin = req.get('Origin')?.trim().replace(/\/+$/, '');
   if (!origin || !allowedOrigins.includes(origin)) return next();
 
   res.setHeader('Access-Control-Allow-Origin', origin);
