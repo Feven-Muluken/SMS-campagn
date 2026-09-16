@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../data/providers/auth_provider.dart';
 import '../../../data/providers/sender_id_provider.dart';
 import '../../../routes/app_routes.dart';
@@ -12,6 +11,7 @@ import '../../../widgets/error_view.dart';
 import '../../../widgets/loader.dart';
 import '../../../widgets/notice.dart';
 import '../widgets/sender_id_tile.dart';
+import '../widgets/sender_id_details_card.dart';
 
 /// Company request history or the platform administrator's approval queue.
 class SenderIdListScreen extends StatefulWidget {
@@ -140,38 +140,23 @@ class _SenderIdListScreenState extends State<SenderIdListScreen> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              provider.requests[i].senderId,
-                                              style: const TextStyle(
-                                                fontSize: 17,
-                                                fontWeight: FontWeight.w700,
+                                            ListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              leading: const Icon(
+                                                Icons.badge_outlined,
                                               ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${provider.requests[i].companyName ?? 'Unknown company'} · ${provider.requests[i].requesterName ?? 'Unknown requester'}',
-                                            ),
-                                            if (provider
-                                                    .requests[i]
-                                                    .reason
-                                                    ?.isNotEmpty ==
-                                                true)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 4,
-                                                ),
-                                                child: Text(
-                                                  'Reason: ${provider.requests[i].reason!}',
+                                              title: Text(
+                                                provider.requests[i].senderId,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
                                                 ),
                                               ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Status: ${provider.requests[i].status}'
-                                              '${provider.requests[i].reviewerName == null ? '' : ' · ${provider.requests[i].status == 'approved' ? 'Approved' : 'Rejected'} by ${provider.requests[i].reviewerName}'}'
-                                              '${provider.requests[i].reviewedAt == null ? '' : ' on ${Formatters.dateTime(provider.requests[i].reviewedAt!)}'}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
+                                              subtitle: const Text(
+                                                'Review request details below',
                                               ),
+                                            ),
+                                            SenderIdDetailsCard(
+                                              request: provider.requests[i],
                                             ),
                                             const SizedBox(height: 10),
                                             if (provider.requests[i].status ==

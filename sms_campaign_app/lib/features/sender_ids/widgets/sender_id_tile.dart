@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/utils/formatters.dart';
 import '../../../data/models/sender_id.dart';
-import '../../reports/widgets/status_chip.dart';
+import 'sender_id_details_card.dart';
 
 /// Row for a locally-tracked sender ID request.
 class SenderIdTile extends StatelessWidget {
@@ -13,39 +12,25 @@ class SenderIdTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reviewDetails = request.reviewerName == null
-        ? null
-        : '${request.status == 'approved' ? 'Approved' : 'Rejected'} by '
-              '${request.reviewerName}'
-              '${request.reviewedAt == null ? '' : ' on ${Formatters.dateTime(request.reviewedAt!)}'}';
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.badge_outlined),
-        title: Text(
-          request.senderId,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+    return Column(
+      children: [
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.badge_outlined),
+            title: Text(request.senderId,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: const Text('View request details below'),
+            trailing: onDelete == null
+                ? null
+                : IconButton(
+                    tooltip: 'Delete sender ID',
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: onDelete,
+                  ),
+          ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Requested ${Formatters.dateTime(request.requestedAt)}'),
-            if (request.reason?.isNotEmpty == true)
-              Text('Reason: ${request.reason}'),
-            if (reviewDetails != null) Text(reviewDetails),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            StatusChip(status: request.status),
-            if (onDelete != null)
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
-                onPressed: onDelete,
-              ),
-          ],
-        ),
-      ),
+        SenderIdDetailsCard(request: request),
+      ],
     );
   }
 }
