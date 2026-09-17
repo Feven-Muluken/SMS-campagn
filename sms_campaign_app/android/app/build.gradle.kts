@@ -54,6 +54,9 @@ android {
         release {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
+            } else {
+                // Keep local release APKs installable when no upload keystore is configured.
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
     }
